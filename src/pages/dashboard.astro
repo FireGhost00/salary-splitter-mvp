@@ -3,6 +3,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 import HeroBalance from "../components/dashboard/HeroBalance.astro";
 import QuincenaTracker from "../components/dashboard/QuincenaTracker.astro";
 import EnvelopeCard from "../components/dashboard/EnvelopeCard.astro";
+import QuickExpenseModal from "../components/dashboard/QuickExpenseModal.jsx";
 import { heroBalanceInCents, envelopes } from "../data/mockData";
 ---
 
@@ -41,5 +42,7 @@ import { heroBalanceInCents, envelopes } from "../data/mockData";
 				</div>
 			</section>
 		</div>
+
+		<QuickExpenseModal client:load />
 	</main>
 </BaseLayout>

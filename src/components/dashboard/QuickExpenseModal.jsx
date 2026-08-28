@@ -1,0 +1,133 @@
+import { useEffect, useState } from "react";
+import { envelopes } from "../../data/mockData";
+
+/**
+ * Convierte el texto del <input type="number"> (dólares) a centavos enteros.
+ * Único punto de conversión, con Math.round explícito (CONVENCIONES.md §2).
+ */
+function toCents(amountText) {
+	const value = Number.parseFloat(amountText);
+	if (Number.isNaN(value)) return 0;
+	return Math.round(value * 100);
+}
+
+/**
+ * Isla interactiva: botón flotante que abre un modal para registrar un gasto
+ * rápido. Por ahora solo hace console.log; luego irá la mutación a Supabase.
+ */
+export default function QuickExpenseModal() {
+	const [isOpen, setIsOpen] = useState(false);
+	const [categoryId, setCategoryId] = useState(envelopes[0]?.id ?? "");
+	const [amountText, setAmountText] = useState("");
+
+	function close() {
+		setIsOpen(false);
+		setAmountText("");
+	}
+
+	useEffect(() => {
+		if (!isOpen) return;
+		function onKeyDown(event) {
+			if (event.key === "Escape") close();
+		}
+		window.addEventListener("keydown", onKeyDown);
+		return () => window.removeEventListener("keydown", onKeyDown);
+	}, [isOpen]);
+
+	function handleSubmit(event) {
+		event.preventDefault();
+		const amountInCents = toCents(amountText);
+		const category = envelopes.find((envelope) => envelope.id === categoryId);
+
+		console.log("[QuickExpense] Descontar", {
+			categoryId,
+			categoryTitle: category?.title ?? null,
+			amountInCents,
+		});
+
+		close();
+	}
+
+	return (
+		<>
+			<button
+				type="button"
+				onClick={() => setIsOpen(true)}
+				aria-label="Registrar gasto rápido"
+				className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full border border-neutral-700 bg-neutral-900 text-2xl leading-none text-neutral-100 shadow-lg transition-colors hover:bg-neutral-800"
+			>
+				+
+			</button>
+
+			{isOpen && (
+				<div
+					className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+					onClick={close}
+				>
+					<div
+						role="dialog"
+						aria-modal="true"
+						aria-label="Gasto rápido"
+						className="w-full max-w-sm rounded-xl border border-slate-800 bg-slate-900 p-5"
+						onClick={(event) => event.stopPropagation()}
+					>
+						<div className="mb-4 flex items-center justify-between">
+							<h2 className="text-sm font-semibold text-slate-100">Gasto rápido</h2>
+							<button
+								type="button"
+								onClick={close}
+								aria-label="Cerrar"
+								className="text-slate-500 transition-colors hover:text-slate-300"
+							>
+								✕
+							</button>
+						</div>
+
+						<form onSubmit={handleSubmit} className="space-y-4">
+							<label className="block space-y-1">
+								<span className="text-xs uppercase tracking-wider text-slate-500">
+									Categoría
+								</span>
+								<select
+									value={categoryId}
+									onChange={(event) => setCategoryId(event.target.value)}
+									className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-slate-500 focus:outline-none"
+								>
+									{envelopes.map((envelope) => (
+										<option key={envelope.id} value={envelope.id}>
+											{envelope.title}
+										</option>
+									))}
+								</select>
+							</label>
+
+							<label className="block space-y-1">
+								<span className="text-xs uppercase tracking-wider text-slate-500">
+									Monto
+								</span>
+								<input
+									type="number"
+									inputMode="decimal"
+									step="0.01"
+									min="0"
+									placeholder="0.00"
+									required
+									value={amountText}
+									onChange={(event) => setAmountText(event.target.value)}
+									className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm text-slate-100 focus:border-slate-500 focus:outline-none"
+								/>
+							</label>
+
+							<button
+								type="submit"
+								className="w-full rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-500"
+							>
+								Descontar
+							</button>
+						</form>
+					</div>
+				</div>
+			)}
+		</>
+	);
+}
