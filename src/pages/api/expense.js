@@ -1,4 +1,4 @@
-import { getSupabaseClient } from "../../lib/supabase.js";
+import { createSupabaseServerClient } from "../../lib/supabase.js";
 
 // Ruta on-demand: necesita ejecutarse en el servidor para insertar en Supabase.
 // El resto del sitio sigue siendo estático (CONVENCIONES.md §1).
@@ -18,7 +18,8 @@ function json(payload, status = 200) {
  * Registra un gasto en `transactions` con el monto en centavos NEGATIVOS,
  * para que un SUM() sobre la columna devuelva el saldo restante.
  */
-export async function POST({ request }) {
+export async function POST(context) {
+	const { request } = context;
 	let body;
 	try {
 		body = await request.json();
@@ -44,9 +45,18 @@ export async function POST({ request }) {
 
 	let supabase;
 	try {
-		supabase = getSupabaseClient();
+		supabase = createSupabaseServerClient(context);
 	} catch (configError) {
 		return json({ error: configError.message }, 500);
+	}
+
+	// Requiere sesión: el insert respeta RLS y `user_id` sale de auth.uid().
+	const {
+		data: { user },
+	} = await supabase.auth.getUser();
+
+	if (!user) {
+		return json({ error: "No autenticado." }, 401);
 	}
 
 	const { data, error } = await supabase

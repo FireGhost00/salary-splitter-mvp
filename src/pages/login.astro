@@ -1,0 +1,81 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { createSupabaseServerClient } from "../lib/supabase.js";
+
+// Ruta on-demand: procesa el POST del formulario y setea las cookies de sesión.
+export const prerender = false;
+
+const supabase = createSupabaseServerClient(Astro);
+
+// Si ya hay sesión, no hay nada que hacer aquí.
+const {
+	data: { user },
+} = await supabase.auth.getUser();
+
+if (user) {
+	return Astro.redirect("/dashboard");
+}
+
+let errorMessage: string | null = null;
+
+if (Astro.request.method === "POST") {
+	const form = await Astro.request.formData();
+	const email = String(form.get("email") ?? "").trim();
+	const password = String(form.get("password") ?? "");
+
+	if (!email || !password) {
+		errorMessage = "Email y contraseña son obligatorios.";
+	} else {
+		// signInWithPassword persiste la sesión llamando a setAll() -> cookies.
+		const { error } = await supabase.auth.signInWithPassword({ email, password });
+
+		if (error) {
+			errorMessage = error.message;
+		} else {
+			return Astro.redirect("/dashboard");
+		}
+	}
+}
+---
+
+<BaseLayout title="Entrar · AUTO-SALDO">
+	<main class="mx-auto flex min-h-screen w-full max-w-sm flex-col justify-center px-6 py-16">
+		<header class="mb-8 space-y-1">
+			<h1 class="text-xl font-semibold tracking-tight">AUTO-SALDO</h1>
+			<p class="text-sm text-neutral-500">Entra para ver tus sobres.</p>
+		</header>
+
+		<form method="POST" class="space-y-4">
+			<label class="block space-y-1">
+				<span class="text-xs uppercase tracking-wider text-neutral-500">Email</span>
+				<input
+					type="email"
+					name="email"
+					required
+					autocomplete="email"
+					class="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:border-neutral-500 focus:outline-none"
+				/>
+			</label>
+
+			<label class="block space-y-1">
+				<span class="text-xs uppercase tracking-wider text-neutral-500">Contraseña</span>
+				<input
+					type="password"
+					name="password"
+					required
+					autocomplete="current-password"
+					class="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:border-neutral-500 focus:outline-none"
+				/>
+			</label>
+
+			{errorMessage && <p class="text-xs text-rose-400">{errorMessage}</p>}
+
+			<button
+				type="submit"
+				class="w-full rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-500"
+			>
+				Entrar
+			</button>
+		</form>
+	</main>
+</BaseLayout>
