@@ -14,7 +14,8 @@ function json(payload, status = 200) {
 
 /**
  * POST /api/expense
- * Body: { amount: number (dólares), category_id: string, label: string }
+ * Body: { amount: number (dólares), category_id: string, label?: string }
+ * `label` es opcional; por defecto "Gasto".
  * Registra un gasto en `transactions` con el monto en centavos NEGATIVOS,
  * para que un SUM() sobre la columna devuelva el saldo restante.
  */
@@ -35,9 +36,10 @@ export async function POST(context) {
 	if (typeof category_id !== "string" || category_id.trim() === "") {
 		return json({ error: "`category_id` es obligatorio." }, 400);
 	}
-	if (typeof label !== "string" || label.trim() === "") {
-		return json({ error: "`label` es obligatorio." }, 400);
-	}
+
+	// `label` es opcional: si no viene o llega vacío, usa "Gasto" por defecto.
+	const finalLabel =
+		typeof label === "string" && label.trim() !== "" ? label.trim() : "Gasto";
 
 	// Patrón Money (CONVENCIONES.md §2): centavos enteros, Math.round explícito.
 	// Signo negativo => es un gasto que resta al saldo.
@@ -63,7 +65,7 @@ export async function POST(context) {
 		.from("transactions")
 		.insert({
 			category_id,
-			label: label.trim(),
+			label: finalLabel,
 			amount_cents,
 			transaction_type: "gasto",
 		})

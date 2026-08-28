@@ -1,23 +1,17 @@
 import { createClient } from "@supabase/supabase-js";
 import { createServerClient, parseCookieHeader } from "@supabase/ssr";
 
-/**
- * Lee una variable de entorno. En `astro dev` viene de `.env` vía
- * `import.meta.env`; en el server compilado, de `process.env` en runtime.
- */
-function readEnv(key) {
-	return import.meta.env[key] ?? process.env[key];
-}
+// Credenciales SIEMPRE desde import.meta.env (CONVENCIONES.md §4). Nunca hardcodear.
+const SUPABASE_URL = import.meta.env.SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.SUPABASE_ANON_KEY;
 
 function getCredentials() {
-	const url = readEnv("SUPABASE_URL");
-	const anonKey = readEnv("SUPABASE_ANON_KEY");
-	if (!url || !anonKey) {
+	if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 		throw new Error(
 			"Faltan SUPABASE_URL y/o SUPABASE_ANON_KEY en el entorno. Copia .env.example a .env.",
 		);
 	}
-	return { url, anonKey };
+	return { url: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY };
 }
 
 /**
