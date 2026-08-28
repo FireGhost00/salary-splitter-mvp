@@ -1,12 +1,44 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
+import HeroBalance from "../components/dashboard/HeroBalance.astro";
+import QuincenaTracker from "../components/dashboard/QuincenaTracker.astro";
+import EnvelopeCard from "../components/dashboard/EnvelopeCard.astro";
+import { heroBalanceInCents, envelopes } from "../data/mockData";
 ---
 
 <BaseLayout title="AUTO-SALDO">
-	<main class="mx-auto flex min-h-screen max-w-2xl flex-col items-center justify-center gap-4 px-6 text-center">
-		<h1 class="text-3xl font-semibold tracking-tight">AUTO-SALDO</h1>
-		<p class="text-neutral-400">
-			Proyecto inicializado: Astro + Tailwind CSS + Supabase.
-		</p>
+	<main class="mx-auto flex min-h-screen max-w-3xl flex-col gap-10 px-6 py-16">
+		<header class="space-y-1">
+			<h1 class="text-2xl font-semibold tracking-tight">AUTO-SALDO</h1>
+			<p class="text-sm text-neutral-500">
+				Previsualización con datos mock · sin conexión a Supabase
+			</p>
+		</header>
+
+		<HeroBalance amountInCents={heroBalanceInCents} />
+
+		<section class="space-y-3">
+			<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-neutral-500">
+				Quincena
+			</h2>
+			<QuincenaTracker />
+		</section>
+
+		<section class="space-y-3">
+			<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-neutral-500">
+				Sobres
+			</h2>
+			<div class="grid gap-4 sm:grid-cols-2">
+				{
+					envelopes.map((envelope) => (
+						<EnvelopeCard
+							title={envelope.title}
+							type={envelope.type}
+							balanceInCents={envelope.balanceInCents}
+						/>
+					))
+				}
+			</div>
+		</section>
 	</main>
 </BaseLayout>

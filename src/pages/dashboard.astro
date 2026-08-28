@@ -1,0 +1,45 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import HeroBalance from "../components/dashboard/HeroBalance.astro";
+import QuincenaTracker from "../components/dashboard/QuincenaTracker.astro";
+import EnvelopeCard from "../components/dashboard/EnvelopeCard.astro";
+import { heroBalanceInCents, envelopes } from "../data/mockData";
+---
+
+<BaseLayout title="Dashboard · AUTO-SALDO">
+	<main class="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6 sm:py-12">
+		<header class="mb-8 space-y-1">
+			<h1 class="text-xl font-semibold tracking-tight sm:text-2xl">Dashboard</h1>
+			<p class="text-sm text-neutral-500">Datos mock · sin conexión a Supabase</p>
+		</header>
+
+		<div class="space-y-8">
+			<HeroBalance amountInCents={heroBalanceInCents} />
+
+			<section class="space-y-3">
+				<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-neutral-500">
+					Quincena
+				</h2>
+				<QuincenaTracker />
+			</section>
+
+			<section class="space-y-3">
+				<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-neutral-500">
+					Sobres
+				</h2>
+				{/* Mobile-first: 1 columna en móvil, CSS Grid de 3 columnas en escritorio. */}
+				<div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+					{
+						envelopes.map((envelope) => (
+							<EnvelopeCard
+								title={envelope.title}
+								type={envelope.type}
+								balanceInCents={envelope.balanceInCents}
+							/>
+						))
+					}
+				</div>
+			</section>
+		</div>
+	</main>
+</BaseLayout>

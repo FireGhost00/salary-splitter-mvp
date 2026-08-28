@@ -1,0 +1,35 @@
+---
+/**
+ * Indicador de quincena. Q1 = días 1–15, Q2 = 16–fin de mes.
+ * La quincena activa se calcula con la fecha del sistema.
+ */
+const dayOfMonth = new Date().getDate();
+const currentQuincena: "Q1" | "Q2" = dayOfMonth <= 15 ? "Q1" : "Q2";
+
+const quincenas = [
+	{ id: "Q1", label: "Q1", range: "1 – 15" },
+	{ id: "Q2", label: "Q2", range: "16 – fin" },
+] as const;
+---
+
+<div class="flex gap-3" role="group" aria-label="Quincena actual">
+	{
+		quincenas.map((quincena) => {
+			const isActive = quincena.id === currentQuincena;
+			return (
+				<div
+					aria-current={isActive ? "true" : undefined}
+					class:list={[
+						"flex-1 rounded-lg border px-4 py-3 text-center transition-colors",
+						isActive
+							? "border-emerald-500/60 bg-emerald-500/10 text-emerald-300"
+							: "border-neutral-800 bg-neutral-900 text-neutral-600",
+					]}
+				>
+					<p class="text-sm font-semibold tracking-wide">{quincena.label}</p>
+					<p class="text-xs opacity-70">{quincena.range}</p>
+				</div>
+			);
+		})
+	}
+</div>
