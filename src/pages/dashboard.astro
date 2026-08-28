@@ -4,18 +4,53 @@ import HeroBalance from "../components/dashboard/HeroBalance.astro";
 import QuincenaTracker from "../components/dashboard/QuincenaTracker.astro";
 import EnvelopeCard from "../components/dashboard/EnvelopeCard.astro";
 import QuickExpenseModal from "../components/dashboard/QuickExpenseModal.jsx";
-import { heroBalanceInCents, envelopes } from "../data/mockData";
+import { createSupabaseServerClient } from "../lib/supabase.js";
+
+// Ruta on-demand: necesita la sesión del usuario en cada request.
+export const prerender = false;
+
+const supabase = createSupabaseServerClient(Astro);
+
+// Sesión (Supabase Auth). Sin usuario -> al login.
+const {
+	data: { user },
+} = await supabase.auth.getUser();
+
+if (!user) {
+	return Astro.redirect("/login");
+}
+
+// Vista ya filtrada por usuario vía RLS.
+const { data, error } = await supabase.from("category_balances").select("*");
+
+if (error) {
+	throw new Error(`No se pudo cargar category_balances: ${error.message}`);
+}
+
+const categories = data ?? [];
+
+// Saldo total = suma de todos los balance_cents (centavos enteros, CONVENCIONES.md §2).
+const totalBalanceCents = categories.reduce(
+	(total, category) => total + category.balance_cents,
+	0,
+);
+
+// El modal necesita la lista de categorías para su <select>.
+const modalCategories = categories.map((category) => ({
+	id: category.category_name,
+	title: category.category_name,
+}));
 ---
 
 <BaseLayout title="Dashboard · AUTO-SALDO">
 	<main class="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6 sm:py-12">
 		<header class="mb-8 space-y-1">
 			<h1 class="text-xl font-semibold tracking-tight sm:text-2xl">Dashboard</h1>
-			<p class="text-sm text-neutral-500">Datos mock · sin conexión a Supabase</p>
+			<p class="text-sm text-neutral-500">Saldos en tiempo real</p>
 		</header>
 
 		<div class="space-y-8">
-			<HeroBalance amountInCents={heroBalanceInCents} />
+			<HeroBalance amountInCents={totalBalanceCents} />
 
 			<section class="space-y-3">
 				<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-neutral-500">
@@ -31,11 +66,11 @@ import { heroBalanceInCents, envelopes } from "../data/mockData";
 				{/* Mobile-first: 1 columna en móvil, CSS Grid de 3 columnas en escritorio. */}
 				<div class="grid grid-cols-1 gap-4 md:grid-cols-3">
 					{
-						envelopes.map((envelope) => (
+						categories.map((category) => (
 							<EnvelopeCard
-								title={envelope.title}
-								type={envelope.type}
-								balanceInCents={envelope.balanceInCents}
+								title={category.category_name}
+								type={category.category_type}
+								balanceInCents={category.balance_cents}
 							/>
 						))
 					}
@@ -43,6 +78,6 @@ import { heroBalanceInCents, envelopes } from "../data/mockData";
 			</section>
 		</div>
 
-		<QuickExpenseModal client:load />
+		<QuickExpenseModal client:load categories={modalCategories} />
 	</main>
 </BaseLayout>

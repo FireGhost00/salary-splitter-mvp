@@ -1,14 +1,15 @@
 import { useEffect, useState } from "react";
-import { envelopes } from "../../data/mockData";
 
 /**
  * Isla interactiva: botón flotante que abre un modal para registrar un gasto
  * rápido. Envía el monto en dólares a POST /api/expense, que lo convierte a
  * centavos negativos e inserta en `transactions`.
+ *
+ * @param {{ categories: { id: string, title: string }[] }} props
  */
-export default function QuickExpenseModal() {
+export default function QuickExpenseModal({ categories = [] }) {
 	const [isOpen, setIsOpen] = useState(false);
-	const [categoryId, setCategoryId] = useState(envelopes[0]?.id ?? "");
+	const [categoryId, setCategoryId] = useState(categories[0]?.id ?? "");
 	const [amountText, setAmountText] = useState("");
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [error, setError] = useState(null);
@@ -38,7 +39,7 @@ export default function QuickExpenseModal() {
 			return;
 		}
 
-		const category = envelopes.find((envelope) => envelope.id === categoryId);
+		const category = categories.find((item) => item.id === categoryId);
 
 		setIsSubmitting(true);
 		setError(null);
@@ -114,9 +115,9 @@ export default function QuickExpenseModal() {
 									onChange={(event) => setCategoryId(event.target.value)}
 									className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-slate-500 focus:outline-none"
 								>
-									{envelopes.map((envelope) => (
-										<option key={envelope.id} value={envelope.id}>
-											{envelope.title}
+									{categories.map((item) => (
+										<option key={item.id} value={item.id}>
+											{item.title}
 										</option>
 									))}
 								</select>
