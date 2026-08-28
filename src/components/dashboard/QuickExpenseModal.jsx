@@ -2,27 +2,21 @@ import { useEffect, useState } from "react";
 import { envelopes } from "../../data/mockData";
 
 /**
- * Convierte el texto del <input type="number"> (dólares) a centavos enteros.
- * Único punto de conversión, con Math.round explícito (CONVENCIONES.md §2).
- */
-function toCents(amountText) {
-	const value = Number.parseFloat(amountText);
-	if (Number.isNaN(value)) return 0;
-	return Math.round(value * 100);
-}
-
-/**
  * Isla interactiva: botón flotante que abre un modal para registrar un gasto
- * rápido. Por ahora solo hace console.log; luego irá la mutación a Supabase.
+ * rápido. Envía el monto en dólares a POST /api/expense, que lo convierte a
+ * centavos negativos e inserta en `transactions`.
  */
 export default function QuickExpenseModal() {
 	const [isOpen, setIsOpen] = useState(false);
 	const [categoryId, setCategoryId] = useState(envelopes[0]?.id ?? "");
 	const [amountText, setAmountText] = useState("");
+	const [isSubmitting, setIsSubmitting] = useState(false);
+	const [error, setError] = useState(null);
 
 	function close() {
 		setIsOpen(false);
 		setAmountText("");
+		setError(null);
 	}
 
 	useEffect(() => {
@@ -34,18 +28,45 @@ export default function QuickExpenseModal() {
 		return () => window.removeEventListener("keydown", onKeyDown);
 	}, [isOpen]);
 
-	function handleSubmit(event) {
+	async function handleSubmit(event) {
 		event.preventDefault();
-		const amountInCents = toCents(amountText);
+		if (isSubmitting) return;
+
+		const amount = Number.parseFloat(amountText);
+		if (!Number.isFinite(amount) || amount <= 0) {
+			setError("Introduce un monto mayor que 0.");
+			return;
+		}
+
 		const category = envelopes.find((envelope) => envelope.id === categoryId);
 
-		console.log("[QuickExpense] Descontar", {
-			categoryId,
-			categoryTitle: category?.title ?? null,
-			amountInCents,
-		});
+		setIsSubmitting(true);
+		setError(null);
+		try {
+			const response = await fetch("/api/expense", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					amount,
+					category_id: categoryId,
+					label: category?.title ?? categoryId,
+				}),
+			});
 
-		close();
+			if (response.status === 200) {
+				close();
+				// Recarga para reflejar el nuevo saldo (aún no hay store global).
+				window.location.reload();
+				return;
+			}
+
+			const payload = await response.json().catch(() => ({}));
+			setError(payload.error ?? `Error ${response.status}.`);
+		} catch {
+			setError("No se pudo conectar con el servidor.");
+		} finally {
+			setIsSubmitting(false);
+		}
 	}
 
 	return (
@@ -118,11 +139,14 @@ export default function QuickExpenseModal() {
 								/>
 							</label>
 
+							{error && <p className="text-xs text-rose-400">{error}</p>}
+
 							<button
 								type="submit"
-								className="w-full rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-500"
+								disabled={isSubmitting}
+								className="w-full rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
 							>
-								Descontar
+								{isSubmitting ? "Descontando…" : "Descontar"}
 							</button>
 						</form>
 					</div>
