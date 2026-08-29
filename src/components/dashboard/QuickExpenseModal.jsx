@@ -1,198 +1,34 @@
-import { useEffect, useMemo, useState } from "react";
-
-const MACRO_OTROS = "Otros";
+import { useState } from "react";
+import ExpenseModal from "../ExpenseModal.jsx";
 
 /**
- * Isla interactiva: botón flotante que abre un modal para registrar un gasto
- * rápido. Envía el monto en dólares a POST /api/expense, que lo convierte a
- * centavos negativos e inserta en `transactions`.
+ * FAB (botón flotante) para registrar un gasto rápido. Guarda el estado
+ * `isModalOpen` y renderiza <ExpenseModal>. Un solo island: el FAB y el modal
+ * comparten estado, por eso viven juntos.
  *
- * @param {{ categories: { id: string, name: string, macro_type?: string }[] }} props
+ * El botón flota por encima del Navbar inferior (bottom-24 z-50).
+ *
+ * @param {{ categories?: { id: string, name: string, macro_type?: string }[] }} props
  */
 export default function QuickExpenseModal({ categories = [] }) {
-	// Arreglo plano -> objeto agrupado por macro_type ('Necesidades', 'Deseos', …).
-	const groupedCategories = useMemo(() => {
-		return categories.reduce((groups, category) => {
-			const key = category.macro_type || MACRO_OTROS;
-			(groups[key] ??= []).push(category);
-			return groups;
-		}, {});
-	}, [categories]);
-
-	const [isOpen, setIsOpen] = useState(false);
-	const [categoryId, setCategoryId] = useState(categories[0]?.id ?? "");
-	const [amountText, setAmountText] = useState("");
-	const [description, setDescription] = useState("");
-	const [isSubmitting, setIsSubmitting] = useState(false);
-	const [error, setError] = useState(null);
-
-	function close() {
-		setIsOpen(false);
-		setAmountText("");
-		setDescription("");
-		setError(null);
-	}
-
-	useEffect(() => {
-		if (!isOpen) return;
-		function onKeyDown(event) {
-			if (event.key === "Escape") close();
-		}
-		window.addEventListener("keydown", onKeyDown);
-		return () => window.removeEventListener("keydown", onKeyDown);
-	}, [isOpen]);
-
-	async function handleSubmit(event) {
-		event.preventDefault();
-		if (isSubmitting) return;
-
-		const amount = Number.parseFloat(amountText);
-		if (!Number.isFinite(amount) || amount <= 0) {
-			setError("Introduce un monto mayor que 0.");
-			return;
-		}
-
-		const category = categories.find((cat) => cat.id === categoryId);
-
-		setIsSubmitting(true);
-		setError(null);
-		try {
-			const response = await fetch("/api/expense", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					amount,
-					category_id: categoryId,
-					label: category?.name ?? categoryId,
-					// Opcional: string vacío si el usuario no escribe nada.
-					description: description.trim(),
-				}),
-			});
-
-			if (response.status === 200) {
-				close();
-				// Recarga para reflejar el nuevo saldo (aún no hay store global).
-				window.location.reload();
-				return;
-			}
-
-			const payload = await response.json().catch(() => ({}));
-			setError(payload.error ?? `Error ${response.status}.`);
-		} catch {
-			setError("No se pudo conectar con el servidor.");
-		} finally {
-			setIsSubmitting(false);
-		}
-	}
+	const [isModalOpen, setIsModalOpen] = useState(false);
 
 	return (
 		<>
 			<button
 				type="button"
-				onClick={() => setIsOpen(true)}
+				onClick={() => setIsModalOpen(true)}
 				aria-label="Registrar gasto rápido"
-				className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-2xl leading-none text-slate-100 shadow-lg transition-colors hover:bg-slate-700"
+				className="fixed bottom-24 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-2xl leading-none text-slate-100 shadow-lg transition-colors hover:bg-slate-700"
 			>
 				+
 			</button>
 
-			{isOpen && (
-				<div
-					className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-					onClick={close}
-				>
-					<div
-						role="dialog"
-						aria-modal="true"
-						aria-label="Gasto rápido"
-						className="w-full max-w-sm rounded-xl border border-slate-700 bg-slate-800 p-5 shadow-xl"
-						onClick={(event) => event.stopPropagation()}
-					>
-						<div className="mb-4 flex items-center justify-between">
-							<h2 className="text-sm font-semibold text-slate-100">Gasto rápido</h2>
-							<button
-								type="button"
-								onClick={close}
-								aria-label="Cerrar"
-								className="text-slate-400 transition-colors hover:text-slate-200"
-							>
-								✕
-							</button>
-						</div>
-
-						<form onSubmit={handleSubmit} className="space-y-4">
-							<label className="block space-y-1">
-								<span className="text-xs uppercase tracking-wider text-slate-400">
-									Categoría
-								</span>
-								<select
-									value={categoryId}
-									onChange={(event) => setCategoryId(event.target.value)}
-									className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-								>
-									{Object.entries(groupedCategories).map(([macroType, cats]) => (
-										<optgroup
-											key={macroType}
-											label={macroType}
-											className="bg-slate-900 text-slate-400"
-										>
-											{cats.map((cat) => (
-												<option
-													key={cat.id}
-													value={cat.id}
-													className="bg-slate-900 text-slate-100"
-												>
-													{cat.name}
-												</option>
-											))}
-										</optgroup>
-									))}
-								</select>
-							</label>
-
-							<label className="block space-y-1">
-								<span className="text-xs uppercase tracking-wider text-slate-400">
-									Monto
-								</span>
-								<input
-									type="number"
-									inputMode="decimal"
-									step="0.01"
-									min="0"
-									placeholder="0.00"
-									required
-									value={amountText}
-									onChange={(event) => setAmountText(event.target.value)}
-									className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-sm text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-								/>
-							</label>
-
-							<label className="block space-y-1">
-								<span className="text-xs uppercase tracking-wider text-slate-400">
-									Concepto o Nota (Opcional)
-								</span>
-								<input
-									type="text"
-									value={description}
-									onChange={(event) => setDescription(event.target.value)}
-									placeholder="Ej. Súper del sábado"
-									className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-								/>
-							</label>
-
-							{error && <p className="text-xs text-rose-400">{error}</p>}
-
-							<button
-								type="submit"
-								disabled={isSubmitting}
-								className="w-full rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
-							>
-								{isSubmitting ? "Descontando…" : "Descontar"}
-							</button>
-						</form>
-					</div>
-				</div>
-			)}
+			<ExpenseModal
+				open={isModalOpen}
+				onClose={() => setIsModalOpen(false)}
+				categories={categories}
+			/>
 		</>
 	);
 }

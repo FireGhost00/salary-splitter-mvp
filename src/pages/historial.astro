@@ -1,7 +1,6 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
-import TransactionList from "../components/TransactionList.jsx";
-import TransactionForm from "../components/TransactionForm.jsx";
+import TransactionHistory from "../components/TransactionHistory.jsx";
 import { createSupabaseServerClient } from "../lib/supabase.js";
 
 // Ruta on-demand: requiere sesión.
@@ -17,40 +16,56 @@ if (!user) {
 	return Astro.redirect("/login");
 }
 
-// `transactions.category_id` ya contiene el NOMBRE de la categoría (FK compuesta
-// (user_id, category_id) -> categories(user_id, name)), así que no hace falta un
-// embed frágil: el dato relacionado ya viene en la fila.
-const { data, error } = await supabase
+// PASO 1: primer lote (página 1, 20 items). Las siguientes páginas las pide el
+// componente a /api/get-history vía .range().
+const PAGE_SIZE = 20;
+
+const { data: txRows, error: txError } = await supabase
 	.from("transactions")
 	.select(
-		"id, effective_date, description, label, category_id, amount_cents, transaction_type",
+		"id, category_id, description, label, amount_cents, transaction_type, created_at, effective_date",
 	)
 	.eq("user_id", user.id)
-	.order("effective_date", { ascending: false })
-	.limit(100);
+	.order("created_at", { ascending: false })
+	.range(0, PAGE_SIZE - 1);
 
-if (error) {
-	throw new Error(`No se pudo cargar el historial: ${error.message}`);
+if (txError) {
+	throw new Error(`No se pudo cargar el historial: ${txError.message}`);
 }
 
-const transactions = data ?? [];
+// "JOIN" con categories para el nombre real. En esta rama `transactions.category_id`
+// normalmente YA es el nombre; el mapa resuelve el caso en que sea un UUID.
+const { data: catRows, error: catError } = await supabase
+	.from("categories")
+	.select("id, name")
+	.eq("user_id", user.id);
 
-// Categorías para el <select> del formulario (categories no tiene columna id ->
-// el nombre hace de identificador).
-const { data: categoryRows } = await supabase.from("categories").select("name");
-const categories = (categoryRows ?? []).map((row) => ({
-	id: row.name,
-	name: row.name,
+if (catError) {
+	console.warn("No se pudieron cargar las categorías:", catError.message);
+}
+
+const nameById = new Map((catRows ?? []).map((c) => [String(c.id), c.name]));
+
+const transactions = (txRows ?? []).map((tx) => ({
+	id: tx.id,
+	category:
+		nameById.get(String(tx.category_id)) ?? tx.category_id ?? "Sin categoría",
+	description: tx.description,
+	label: tx.label,
+	amount_cents: Number(tx.amount_cents ?? 0),
+	transaction_type: tx.transaction_type,
+	created_at: tx.created_at,
+	effective_date: tx.effective_date,
 }));
 ---
 
 <BaseLayout title="Historial · SalarySplitter">
-	<main class="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6 sm:py-12">
+	<main class="mx-auto w-full max-w-2xl px-4 py-8 pb-32 sm:px-6 sm:py-12">
 		<header class="mb-8 flex items-center justify-between gap-4">
 			<div class="space-y-1">
 				<h1 class="text-xl font-semibold tracking-tight sm:text-2xl">Historial</h1>
 				<p class="text-sm text-slate-400">
-					Movimientos del más reciente al más antiguo.
+					Todos tus movimientos, del más reciente al más antiguo.
 				</p>
 			</div>
 			<a
@@ -61,10 +76,6 @@ const categories = (categoryRows ?? []).map((row) => ({
 			</a>
 		</header>
 
-		<div class="mb-8">
-			<TransactionForm client:load categories={categories} />
-		</div>
-
-		<TransactionList client:load transactions={transactions} />
+		<TransactionHistory client:load transactions={transactions} />
 	</main>
 </BaseLayout>

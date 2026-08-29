@@ -1,7 +1,6 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
-import CategoryManager from "../components/CategoryManager.jsx";
-import RulesEditor from "../components/RulesEditor.jsx";
+import BudgetConfigManager from "../components/BudgetConfigManager.jsx";
 import { createSupabaseServerClient } from "../lib/supabase.js";
 
 // Ruta on-demand: requiere sesión.
@@ -17,31 +16,36 @@ if (!user) {
 	return Astro.redirect("/login");
 }
 
-const { data: categoryRows, error: catError } = await supabase
-	.from("categories")
-	.select("name, macro_type, target_amount");
+const { data: cfgRow, error: cfgError } = await supabase
+	.from("budget_config")
+	.select("debt_enabled, debt_monthly_cents, provisions_enabled")
+	.eq("user_id", user.id)
+	.maybeSingle();
 
-if (catError) {
-	throw new Error(`No se pudieron cargar las categorías: ${catError.message}`);
+if (cfgError) {
+	throw new Error(`No se pudo cargar budget_config: ${cfgError.message}`);
 }
 
-const categories = (categoryRows ?? []).map((row) => ({
-	id: row.name,
-	name: row.name,
-	macro_type: row.macro_type ?? "",
-	target_amount: Number(row.target_amount ?? 0),
+const { data: provRows, error: provError } = await supabase
+	.from("provision_items")
+	.select("id, label, annual_amount_cents")
+	.eq("user_id", user.id)
+	.order("created_at", { ascending: true });
+
+if (provError) {
+	throw new Error(`No se pudieron cargar los rubros: ${provError.message}`);
+}
+
+const budgetConfig = {
+	debt_enabled: cfgRow?.debt_enabled ?? false,
+	debt_monthly_cents: Number(cfgRow?.debt_monthly_cents ?? 0),
+	provisions_enabled: cfgRow?.provisions_enabled ?? false,
+};
+
+const provisionItems = (provRows ?? []).map((row) => ({
+	label: row.label,
+	annual_amount_cents: Number(row.annual_amount_cents ?? 0),
 }));
-
-const { data: ruleRows, error: rulesError } = await supabase
-	.from("distribution_rules")
-	.select("category_id, percentage")
-	.eq("user_id", user.id);
-
-if (rulesError) {
-	throw new Error(`No se pudieron cargar las reglas: ${rulesError.message}`);
-}
-
-const rules = ruleRows ?? [];
 ---
 
 <BaseLayout title="Configuración · SalarySplitter">
@@ -52,7 +56,7 @@ const rules = ruleRows ?? [];
 					Configuración
 				</h1>
 				<p class="text-sm text-slate-400">
-					Tus categorías y cómo se reparte cada ingreso.
+					Reparto fijo 50/30/20 · habilita Deuda y Provisiones.
 				</p>
 			</div>
 			<a
@@ -63,20 +67,10 @@ const rules = ruleRows ?? [];
 			</a>
 		</header>
 
-		<div class="space-y-10">
-			<section class="space-y-3">
-				<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-slate-400">
-					Categorías
-				</h2>
-				<CategoryManager client:load categories={categories} />
-			</section>
-
-			<section class="space-y-3">
-				<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-slate-400">
-					Reparto por porcentaje
-				</h2>
-				<RulesEditor client:load categories={categories} rules={rules} />
-			</section>
-		</div>
+		<BudgetConfigManager
+			client:load
+			config={budgetConfig}
+			provisionItems={provisionItems}
+		/>
 	</main>
 </BaseLayout>

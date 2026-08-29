@@ -2,6 +2,7 @@
 import BaseLayout from "../layouts/BaseLayout.astro";
 import IdealMonth from "../components/IdealMonth.jsx";
 import { createSupabaseServerClient } from "../lib/supabase.js";
+import { monthlyProvisionCents } from "../lib/budget.js";
 
 // Ruta on-demand: requiere sesión.
 export const prerender = false;
@@ -16,30 +17,52 @@ if (!user) {
 	return Astro.redirect("/login");
 }
 
-const { data: categoryRows, error } = await supabase
-	.from("categories")
-	.select("name, macro_type, target_amount")
-	.eq("user_id", user.id);
+// PASO 1: la carga fija (Deuda + Provisión Mensual) vive en Configuración.
+// Aquí solo se LEE para alimentar el simulador.
+const { data: cfgRow, error: cfgError } = await supabase
+	.from("budget_config")
+	.select("debt_enabled, debt_monthly_cents, provisions_enabled")
+	.eq("user_id", user.id)
+	.maybeSingle();
 
-if (error) {
-	throw new Error(`No se pudieron cargar las categorías: ${error.message}`);
+if (cfgError) {
+	throw new Error(`No se pudo cargar budget_config: ${cfgError.message}`);
 }
 
-const categories = (categoryRows ?? []).map((row) => ({
-	id: row.name,
-	name: row.name,
-	macro_type: row.macro_type ?? "",
-	target_amount: Number(row.target_amount ?? 0),
-}));
+const { data: provRows, error: provError } = await supabase
+	.from("provision_items")
+	.select("annual_amount_cents")
+	.eq("user_id", user.id);
+
+if (provError) {
+	throw new Error(`No se pudieron cargar los rubros: ${provError.message}`);
+}
+
+const debtMonthlyCents =
+	cfgRow?.debt_enabled === true ? Number(cfgRow.debt_monthly_cents) || 0 : 0;
+const provisionMonthlyCents =
+	cfgRow?.provisions_enabled === true
+		? monthlyProvisionCents(provRows ?? [])
+		: 0;
+const fixedMonthlyCents = debtMonthlyCents + provisionMonthlyCents;
+
+// Meta de ingreso guardada (columna nueva en profiles).
+const { data: profileRow } = await supabase
+	.from("profiles")
+	.select("ideal_monthly_income_cents")
+	.eq("id", user.id)
+	.maybeSingle();
+
+const initialIncomeCents = Number(profileRow?.ideal_monthly_income_cents ?? 0);
 ---
 
 <BaseLayout title="Mes Ideal · SalarySplitter">
-	<main class="mx-auto w-full max-w-2xl px-4 py-8 sm:px-6 sm:py-12">
+	<main class="mx-auto w-full max-w-2xl px-4 py-8 pb-32 sm:px-6 sm:py-12">
 		<header class="mb-8 flex items-center justify-between gap-4">
 			<div class="space-y-1">
 				<h1 class="text-xl font-semibold tracking-tight sm:text-2xl">Mes Ideal</h1>
 				<p class="text-sm text-slate-400">
-					Tu meta mensual por categoría (deudas, provisiones y demás).
+					Simula cómo se repartiría un ingreso mensual esperado.
 				</p>
 			</div>
 			<a
@@ -50,6 +73,12 @@ const categories = (categoryRows ?? []).map((row) => ({
 			</a>
 		</header>
 
-		<IdealMonth categories={categories} client:load />
+		<IdealMonth
+			client:load
+			debtMonthlyCents={debtMonthlyCents}
+			provisionMonthlyCents={provisionMonthlyCents}
+			fixedMonthlyCents={fixedMonthlyCents}
+			initialIncomeCents={initialIncomeCents}
+		/>
 	</main>
 </BaseLayout>

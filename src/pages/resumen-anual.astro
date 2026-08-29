@@ -1,6 +1,7 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
 import AnnualSummary from "../components/AnnualSummary.jsx";
+import ProvisionsGrowthChart from "../components/ProvisionsGrowthChart.jsx";
 import { createSupabaseServerClient } from "../lib/supabase.js";
 
 // Ruta on-demand: requiere sesión.
@@ -47,6 +48,47 @@ if (catError) {
 const macroByName = new Map(
 	(catRows ?? []).map((c) => [c.name, c.macro_type]),
 );
+
+// --- PASO 1: curva acumulada de Provisiones (sinking funds) -------------
+// Movimientos del año de categorías 'provision', con fecha, para prorratear
+// por mes y arrastrar el saldo del mes anterior.
+const provisionNames = (catRows ?? [])
+	.filter((c) => c.macro_type === "provision")
+	.map((c) => c.name);
+
+const monthlyProvisionNet = Array(12).fill(0);
+if (provisionNames.length > 0) {
+	const { data: provRows, error: provErr } = await supabase
+		.from("transactions")
+		.select("amount_cents, effective_date")
+		.eq("user_id", user.id)
+		.in("category_id", provisionNames)
+		.gte("effective_date", yearStart)
+		.lte("effective_date", yearEnd);
+
+	if (provErr) {
+		console.warn("No se pudo cargar la curva de provisiones:", provErr.message);
+	}
+	for (const row of provRows ?? []) {
+		// effective_date es 'YYYY-MM-DD'; el mes son los caracteres 6-7.
+		const m = Number(String(row.effective_date).slice(5, 7)) - 1;
+		if (m >= 0 && m < 12) {
+			monthlyProvisionNet[m] += Number(row.amount_cents ?? 0);
+		}
+	}
+}
+
+const MESES_CORTOS = [
+	"Ene", "Feb", "Mar", "Abr", "May", "Jun",
+	"Jul", "Ago", "Sep", "Oct", "Nov", "Dic",
+];
+
+// Saldo acumulado: cada mes arrastra el total acumulado del mes anterior.
+let provisionRunning = 0;
+const provisionsGrowth = monthlyProvisionNet.map((net, i) => {
+	provisionRunning += net;
+	return { month: MESES_CORTOS[i], balanceCents: provisionRunning };
+});
 
 let ingresosTotales = 0;
 let totalDeudasPagadas = 0;
@@ -105,5 +147,12 @@ const balanceNeto =
 			totalGastos={totalGastos}
 			balanceNeto={balanceNeto}
 		/>
+
+		<section class="mt-8 space-y-3">
+			<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-slate-400">
+				Crecimiento de provisiones
+			</h2>
+			<ProvisionsGrowthChart client:load data={provisionsGrowth} />
+		</section>
 	</main>
 </BaseLayout>

@@ -7,9 +7,11 @@ interface Props {
 	type: string;
 	/** Saldo del sobre en centavos (entero). Ver CONVENCIONES.md §2. */
 	balanceInCents: number;
+	/** true si el saldo es acumulado de todos los meses (sinking fund). */
+	accumulated?: boolean;
 }
 
-const { title, type, balanceInCents } = Astro.props;
+const { title, type, balanceInCents, accumulated = false } = Astro.props;
 const isNegative = balanceInCents < 0;
 ---
 
@@ -31,4 +33,12 @@ const isNegative = balanceInCents < 0;
 	>
 		{formatCents(balanceInCents)}
 	</p>
+
+	{
+		accumulated && (
+			<p class="mt-1 text-[11px] text-slate-500">
+				Fondo acumulado · saldo de todos los meses
+			</p>
+		)
+	}
 </article>

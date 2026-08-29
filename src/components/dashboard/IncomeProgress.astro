@@ -1,0 +1,69 @@
+---
+import { formatCents } from "../../lib/money";
+
+interface Props {
+	/** Ingreso real registrado este mes (centavos). */
+	realCents: number;
+	/** Meta de ingreso mensual del "Mes Ideal" (centavos). */
+	expectedCents: number;
+}
+
+const { realCents, expectedCents } = Astro.props;
+
+const hasGoal = expectedCents > 0;
+const rawPct = hasGoal ? (realCents / expectedCents) * 100 : 0;
+const fillPct = Math.min(100, Math.max(0, rawPct));
+const surplus = hasGoal && rawPct >= 100;
+---
+
+<div class="rounded-xl border border-slate-700 bg-slate-800 p-4">
+	{
+		hasGoal ? (
+			<>
+				<div class="mb-2 flex items-baseline justify-between gap-3 text-sm">
+					<span class="text-slate-300">
+						Progreso de Ingresos:{" "}
+						<span class="font-mono text-slate-100">{formatCents(realCents)}</span>{" "}
+						reales de{" "}
+						<span class="font-mono text-slate-100">
+							{formatCents(expectedCents)}
+						</span>{" "}
+						esperados
+					</span>
+					<span
+						class:list={[
+							"shrink-0 font-mono text-xs",
+							surplus ? "text-emerald-400" : "text-slate-400",
+						]}
+					>
+						{Math.round(rawPct)}%
+					</span>
+				</div>
+
+				<div class="h-2.5 w-full overflow-hidden rounded-full bg-slate-700">
+					<div
+						class:list={[
+							"h-2.5 rounded-full transition-[width]",
+							surplus ? "bg-emerald-400" : "bg-indigo-500",
+						]}
+						style={`width: ${fillPct}%`}
+					/>
+				</div>
+
+				{surplus && (
+					<p class="mt-1.5 text-xs text-emerald-400">
+						¡Superávit! Superaste tu meta de ingresos este mes.
+					</p>
+				)}
+			</>
+		) : (
+			<p class="text-sm text-slate-400">
+				Define tu meta de ingreso mensual en{" "}
+				<a class="underline hover:text-slate-200" href="/mes-ideal">
+					Mes Ideal
+				</a>{" "}
+				para ver tu progreso aquí.
+			</p>
+		)
+	}
+</div>

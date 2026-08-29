@@ -20,7 +20,10 @@ function localDateISO(d = new Date()) {
 
 /**
  * POST /api/expense
- * Body: { amount: number (dólares), category_id: string, label?: string, description?: string }
+ * Body: {
+ *   amount_cents?: number (entero > 0, preferente) | amount?: number (dólares > 0),
+ *   category_id: string, label?: string, description?: string
+ * }
  * `label` es opcional; por defecto "Gasto". `description` es opcional; null si viene vacío.
  * Registra un gasto en `transactions` con el monto en centavos NEGATIVOS,
  * para que un SUM() sobre la columna devuelva el saldo restante.
@@ -34,11 +37,28 @@ export async function POST(context) {
 		return json({ error: "Cuerpo JSON inválido." }, 400);
 	}
 
-	const { amount, category_id, label, description } = body ?? {};
+	const { amount, amount_cents, category_id, label, description } = body ?? {};
 
-	if (typeof amount !== "number" || !Number.isFinite(amount) || amount <= 0) {
-		return json({ error: "`amount` debe ser un número mayor que 0." }, 400);
+	// Monto bruto del gasto en centavos enteros positivos. Se acepta
+	// `amount_cents` (preferente) o `amount` en la moneda (retrocompat).
+	let grossCents;
+	if (amount_cents !== undefined) {
+		if (!Number.isInteger(amount_cents) || amount_cents <= 0) {
+			return json(
+				{ error: "`amount_cents` debe ser un entero mayor que 0." },
+				400,
+			);
+		}
+		grossCents = amount_cents;
+	} else if (typeof amount === "number" && Number.isFinite(amount) && amount > 0) {
+		grossCents = Math.round(amount * 100);
+	} else {
+		return json(
+			{ error: "Falta `amount_cents` (entero > 0) o `amount` (> 0)." },
+			400,
+		);
 	}
+
 	if (typeof category_id !== "string" || category_id.trim() === "") {
 		return json({ error: "`category_id` es obligatorio." }, 400);
 	}
@@ -53,9 +73,9 @@ export async function POST(context) {
 			? description.trim()
 			: null;
 
-	// Patrón Money (CONVENCIONES.md §2): centavos enteros, Math.round explícito.
+	// Patrón Money (CONVENCIONES.md §2): centavos enteros.
 	// Signo negativo => es un gasto que resta al saldo.
-	const amount_cents = Math.round(amount * 100) * -1;
+	const signedCents = -Math.abs(grossCents);
 
 	let supabase;
 	try {
@@ -79,7 +99,7 @@ export async function POST(context) {
 			category_id,
 			label: finalLabel,
 			description: finalDescription,
-			amount_cents,
+			amount_cents: signedCents,
 			transaction_type: "gasto",
 			// US-15: los gastos siempre se registran con la fecha de hoy.
 			effective_date: localDateISO(),

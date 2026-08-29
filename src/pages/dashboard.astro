@@ -1,6 +1,7 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
 import HeroBalance from "../components/dashboard/HeroBalance.astro";
+import IncomeProgress from "../components/dashboard/IncomeProgress.astro";
 import QuincenaTracker from "../components/dashboard/QuincenaTracker.astro";
 import EnvelopeCard from "../components/dashboard/EnvelopeCard.astro";
 import TransactionList from "../components/TransactionList.jsx";
@@ -9,6 +10,8 @@ import IncomeModal from "../components/dashboard/IncomeModal.jsx";
 import DashboardCharts from "../components/DashboardCharts.jsx";
 import DebtTracker from "../components/DebtTracker.jsx";
 import { createSupabaseServerClient } from "../lib/supabase.js";
+import { monthlyProvisionCents, splitIncome } from "../lib/budget.js";
+import { formatCents } from "../lib/money";
 
 // Ruta on-demand: necesita la sesión del usuario en cada request.
 export const prerender = false;
@@ -28,7 +31,7 @@ if (!user) {
 // Ya no se usa base_salary: el saldo sube solo con ingresos manuales.
 const { data: profile, error: profileError } = await supabase
 	.from("profiles")
-	.select("first_name")
+	.select("first_name, ideal_monthly_income_cents")
 	.eq("id", user.id)
 	.maybeSingle();
 
@@ -106,17 +109,71 @@ if (categoriesError) {
 	console.warn("No se pudo cargar categories:", categoriesError.message);
 }
 
-// Lista para el <select> del modal (forma { id, name, macro_type }).
+// Saldo del mes por categoría (de monthly_balances).
+const monthlyByName = new Map(
+	balances.map((row) => [row.category_id, Number(row.balance ?? 0)]),
+);
+
+// Sinking funds: los sobres 'provision' arrastran saldo. Su "Saldo Disponible
+// Total" = SUM de TODAS sus transacciones históricas, no solo las del mes.
+const provisionNames = (categoryRows ?? [])
+	.filter((row) => row.macro_type === "provision")
+	.map((row) => row.name);
+
+const provisionLifetime: Record<string, number> = {};
+if (provisionNames.length > 0) {
+	const { data: provTxRows, error: provTxError } = await supabase
+		.from("transactions")
+		.select("category_id, amount_cents")
+		.eq("user_id", user.id)
+		.in("category_id", provisionNames);
+
+	if (provTxError) {
+		console.warn(
+			"No se pudo calcular el saldo acumulado de provisiones:",
+			provTxError.message,
+		);
+	}
+	for (const row of provTxRows ?? []) {
+		provisionLifetime[row.category_id] =
+			(provisionLifetime[row.category_id] ?? 0) + Number(row.amount_cents ?? 0);
+	}
+}
+
+/** Saldo disponible de una categoría: acumulado si es provisión, mensual si no. */
+function availableCentsFor(name: string, macroType: string | null): number {
+	return macroType === "provision"
+		? (provisionLifetime[name] ?? 0)
+		: (monthlyByName.get(name) ?? 0);
+}
+
+// Lista para el <select> del modal: incluye el saldo disponible por categoría.
 const categories = (categoryRows ?? []).map((row) => ({
 	id: row.name,
 	name: row.name,
 	macro_type: row.macro_type,
+	availableCents: availableCentsFor(row.name, row.macro_type),
 }));
 
 // nombre -> type: la vista monthly_balances no trae el type de la categoría.
 const categoryTypeByName = new Map(
 	(categoryRows ?? []).map((row) => [row.name, row.type]),
 );
+
+// Sobres a mostrar: los que tuvieron movimiento este mes + SIEMPRE las
+// provisiones (aunque el mes no tengan actividad, para verlas crecer).
+const envelopes = (categoryRows ?? [])
+	.map((row) => {
+		const isProvision = row.macro_type === "provision";
+		return {
+			name: row.name,
+			type: row.type ?? "",
+			isProvision,
+			balanceInCents: availableCentsFor(row.name, row.macro_type),
+			hasMonthlyRow: monthlyByName.has(row.name),
+		};
+	})
+	.filter((e) => e.isProvision || e.hasMonthlyRow);
 
 // Categorías dinámicas para el panel (nombre, macro_type, target_amount).
 const dashCategories = (categoryRows ?? []).map((row) => ({
@@ -128,7 +185,7 @@ const dashCategories = (categoryRows ?? []).map((row) => ({
 // Transacciones del mes en curso (para el panel de categorías).
 const { data: monthTransactions, error: monthTxError } = await supabase
 	.from("transactions")
-	.select("category_id, amount_cents")
+	.select("category_id, amount_cents, transaction_type")
 	.eq("user_id", user.id)
 	.gte("effective_date", monthStartISO)
 	.lte("effective_date", monthEndISO);
@@ -142,17 +199,56 @@ if (monthTxError) {
 
 const monthTx = monthTransactions ?? [];
 
+// --- Alerta de déficit (modelo 50/30/20) -------------------------------
+// Costos fijos mensuales (deuda + provisión) contra el 50 % del ingreso del mes.
+const { data: budgetCfg } = await supabase
+	.from("budget_config")
+	.select("debt_enabled, debt_monthly_cents, provisions_enabled")
+	.eq("user_id", user.id)
+	.maybeSingle();
+
+const { data: provisionRows } = await supabase
+	.from("provision_items")
+	.select("annual_amount_cents")
+	.eq("user_id", user.id);
+
+const debtMonthlyCents =
+	budgetCfg?.debt_enabled === true ? Number(budgetCfg.debt_monthly_cents) || 0 : 0;
+const provisionMonthlyCents =
+	budgetCfg?.provisions_enabled === true
+		? monthlyProvisionCents(provisionRows ?? [])
+		: 0;
+
+// Ingreso del mes = suma de las transacciones de tipo 'ingreso' del mes.
+const ingresoTotalMes = monthTx.reduce(
+	(total, row) =>
+		row.transaction_type === "ingreso"
+			? total + Math.max(0, Number(row.amount_cents ?? 0))
+			: total,
+	0,
+);
+const monthIncomeCents = ingresoTotalMes;
+
+// Meta de ingreso mensual del "Mes Ideal" (profiles.ideal_monthly_income_cents).
+const idealMonthlyIncomeCents = Number(profile?.ideal_monthly_income_cents ?? 0);
+
+const deficitInfo = splitIncome(monthIncomeCents, {
+	debtCents: debtMonthlyCents,
+	provisionCents: provisionMonthlyCents,
+});
+const showDeficitBanner = monthIncomeCents > 0 && deficitInfo.deficit;
+
 // Historial de movimientos fragmentados (lista bajo las gráficas).
 // `transactions.category_id` ES el nombre de la categoría (FK compuesta
 // (user_id, category_id) -> categories(user_id, name)); no hace falta embed.
 const { data: feedRows, error: feedError } = await supabase
 	.from("transactions")
 	.select(
-		"id, category_id, description, label, amount_cents, transaction_type, created_at",
+		"id, category_id, description, label, amount_cents, transaction_type, created_at, effective_date",
 	)
 	.eq("user_id", user.id)
 	.order("created_at", { ascending: false })
-	.limit(20);
+	.limit(200);
 
 if (feedError) {
 	console.warn("No se pudo cargar el historial:", feedError.message);
@@ -204,7 +300,7 @@ const deudas = (debtCats ?? []).map((c) => {
 
 <BaseLayout title="Dashboard · SalarySplitter">
 	<div class="min-h-screen bg-slate-900 text-slate-100">
-		<main class="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6 sm:py-12">
+		<main class="mx-auto w-full max-w-5xl px-4 py-8 pb-32 sm:px-6 sm:py-12 sm:pb-32">
 		<header class="mb-8 flex items-start justify-between gap-4">
 			<div class="space-y-1">
 				<h1 class="text-xl font-semibold tracking-tight text-slate-100 sm:text-2xl">
@@ -222,6 +318,22 @@ const deudas = (debtCats ?? []).map((c) => {
 			</form>
 		</header>
 
+		{
+			showDeficitBanner && (
+				<div class="mb-6 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+					<p class="font-semibold">⚠️ Presupuesto en déficit</p>
+					<p class="mt-1 text-xs">
+						Tus costos fijos ({formatCents(deficitInfo.fixed.total_cents)} —
+						deuda {formatCents(debtMonthlyCents)} + provisión{" "}
+						{formatCents(provisionMonthlyCents)}) superan el 50 % del ingreso de
+						este mes ({formatCents(deficitInfo.shares.necesidad)}). Te faltan{" "}
+						{formatCents(deficitInfo.over_cents)}. Ajusta la Deuda o las
+						Provisiones en <a class="underline" href="/configuracion">Configuración</a>.
+					</p>
+				</div>
+			)
+		}
+
 		<div class="space-y-8">
 			<DebtTracker client:load debts={deudas} />
 
@@ -230,12 +342,20 @@ const deudas = (debtCats ?? []).map((c) => {
 					<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-slate-400">
 						Saldo total
 					</h2>
-					<IncomeModal client:load />
+					<IncomeModal
+						client:load
+						debtMonthlyCents={debtMonthlyCents}
+						provisionMonthlyCents={provisionMonthlyCents}
+					/>
 				</div>
 				<HeroBalance
 					amountInCents={totalBalanceCents}
 					saldoDiferido={saldoDiferido}
 					userId={user.id}
+				/>
+				<IncomeProgress
+					realCents={ingresoTotalMes}
+					expectedCents={idealMonthlyIncomeCents}
 				/>
 			</div>
 
@@ -252,13 +372,6 @@ const deudas = (debtCats ?? []).map((c) => {
 
 			<section class="space-y-3">
 				<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-slate-400">
-					Movimientos
-				</h2>
-				<TransactionList client:load transactions={movimientos} />
-			</section>
-
-			<section class="space-y-3">
-				<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-slate-400">
 					Quincena
 				</h2>
 				<QuincenaTracker />
@@ -271,15 +384,23 @@ const deudas = (debtCats ?? []).map((c) => {
 				{/* Mobile-first: 1 columna en móvil, CSS Grid de 3 columnas en escritorio. */}
 				<div class="grid grid-cols-1 gap-4 md:grid-cols-3">
 					{
-						balances.map((row) => (
+						envelopes.map((envelope) => (
 							<EnvelopeCard
-								title={row.category_id}
-								type={categoryTypeByName.get(row.category_id) ?? ""}
-								balanceInCents={Number(row.balance ?? 0)}
+								title={envelope.name}
+								type={envelope.type}
+								balanceInCents={envelope.balanceInCents}
+								accumulated={envelope.isProvision}
 							/>
 						))
 					}
 				</div>
+			</section>
+
+			<section class="space-y-3">
+				<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-slate-400">
+					Movimientos
+				</h2>
+				<TransactionList client:load transactions={movimientos} />
 			</section>
 		</div>
 

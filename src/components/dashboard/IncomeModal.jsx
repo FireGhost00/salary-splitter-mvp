@@ -1,20 +1,34 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { formatCents } from "../../lib/money";
 
 /**
  * Isla interactiva: botón "+ Ingreso" + modal. El usuario mete el monto real
  * (ej. 1500.50); el frontend lo pasa a centavos (× 100) y hace POST a
- * /api/register-income, que lo reparte entre los sobres según distribution_rules.
+ * /api/register-income, que lo reparte con el modelo 50/30/20.
+ *
+ * Evaluación de déficit EN VIVO: mientras se escribe el monto se calcula el
+ * 50 % (límite de "Necesidad") y se compara contra Deuda mensual + Provisión
+ * Mensual (metas anuales / 12). Si lo superan, se muestra un banner crítico
+ * encima del botón. El endpoint hace la misma comprobación como red de
+ * seguridad (409 `deficit: true`) y en ese caso no registra nada.
+ *
+ * @param {{ debtMonthlyCents?: number, provisionMonthlyCents?: number }} props
  */
-export default function IncomeModal() {
+export default function IncomeModal({
+	debtMonthlyCents = 0,
+	provisionMonthlyCents = 0,
+}) {
 	const [isOpen, setIsOpen] = useState(false);
 	const [amountText, setAmountText] = useState("");
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [error, setError] = useState(null);
+	const [serverDeficit, setServerDeficit] = useState(null);
 
 	function close() {
 		setIsOpen(false);
 		setAmountText("");
 		setError(null);
+		setServerDeficit(null);
 	}
 
 	useEffect(() => {
@@ -25,6 +39,42 @@ export default function IncomeModal() {
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
 	}, [isOpen]);
+
+	// --- PASO 1: evaluación reactiva del déficit -------------------------
+	const evalDeficit = useMemo(() => {
+		const parsed = Number.parseFloat(amountText);
+		const amountCents =
+			Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed * 100) : 0;
+
+		const limiteNecesidad = Math.floor(amountCents / 2); // 50 % del ingreso
+		const deudaMensual = Math.max(0, Math.round(debtMonthlyCents));
+		const provisionMensual = Math.max(0, Math.round(provisionMonthlyCents));
+		const fijos = deudaMensual + provisionMensual;
+		const isDeficit = amountCents > 0 && fijos > limiteNecesidad;
+
+		return {
+			amountCents,
+			limiteNecesidad,
+			deudaMensual,
+			provisionMensual,
+			fijos,
+			faltante: Math.max(0, fijos - limiteNecesidad),
+			isDeficit,
+		};
+	}, [amountText, debtMonthlyCents, provisionMonthlyCents]);
+
+	// Vista unificada del banner: el detalle del servidor manda si existe.
+	const deficitView = serverDeficit
+		? {
+				fijos: serverDeficit.fixed_cents,
+				deudaMensual: serverDeficit.debt_cents,
+				provisionMensual: serverDeficit.provision_cents,
+				limiteNecesidad: serverDeficit.necesidad_cents,
+				faltante: serverDeficit.over_cents,
+			}
+		: evalDeficit;
+
+	const showDeficit = evalDeficit.isDeficit || serverDeficit != null;
 
 	async function handleSubmit(event) {
 		event.preventDefault();
@@ -41,6 +91,7 @@ export default function IncomeModal() {
 
 		setIsSubmitting(true);
 		setError(null);
+		setServerDeficit(null);
 		try {
 			const response = await fetch("/api/register-income", {
 				method: "POST",
@@ -55,7 +106,12 @@ export default function IncomeModal() {
 			}
 
 			const payload = await response.json().catch(() => ({}));
-			setError(payload.error ?? `Error ${response.status}.`);
+			if (payload.deficit && payload.detail) {
+				// Nada quedó registrado: se muestra el desglose y el modal sigue abierto.
+				setServerDeficit(payload.detail);
+			} else {
+				setError(payload.error ?? `Error ${response.status}.`);
+			}
 		} catch {
 			setError("No se pudo conectar con el servidor.");
 		} finally {
@@ -118,8 +174,46 @@ export default function IncomeModal() {
 							</label>
 
 							<p className="text-xs text-slate-400">
-								Se repartirá entre tus sobres según las reglas de distribución.
+								Se repartirá 50 % Necesidad · 30 % Deseo · 20 % Ahorro. La Deuda y
+								la Provisión Mensual salen del 50 % de Necesidad.
 							</p>
+
+							{/* PASO 2 + 3: banner crítico de déficit */}
+							{showDeficit && (
+								<div className="mb-4 rounded-lg border border-rose-500 bg-rose-950/40 p-4">
+									<div className="flex gap-3 text-rose-400">
+										<svg
+											xmlns="http://www.w3.org/2000/svg"
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											strokeWidth="1.75"
+											strokeLinecap="round"
+											strokeLinejoin="round"
+											className="mt-0.5 h-5 w-5 shrink-0"
+											aria-hidden="true"
+										>
+											<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+											<line x1="12" y1="9" x2="12" y2="13" />
+											<line x1="12" y1="17" x2="12.01" y2="17" />
+										</svg>
+										<div className="space-y-1 text-xs">
+											<p>
+												⚠️ Atención: Tus deudas y provisiones superan tu 50% para
+												necesidades. Tendrás que ajustar tus gastos de Deseo o
+												Ahorro para cubrir el déficit de este mes.
+											</p>
+											<p className="text-rose-400/80">
+												Deuda {formatCents(deficitView.deudaMensual)} + Provisión{" "}
+												{formatCents(deficitView.provisionMensual)} ={" "}
+												{formatCents(deficitView.fijos)} &gt; 50 % ={" "}
+												{formatCents(deficitView.limiteNecesidad)}. Déficit:{" "}
+												{formatCents(deficitView.faltante)}.
+											</p>
+										</div>
+									</div>
+								</div>
+							)}
 
 							{error && <p className="text-xs text-rose-400">{error}</p>}
 
