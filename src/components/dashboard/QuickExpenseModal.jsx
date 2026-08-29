@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-const SIN_CLASIFICAR = "Sin clasificar";
+const MACRO_OTROS = "Otros";
 
 /**
  * Isla interactiva: botón flotante que abre un modal para registrar un gasto
@@ -13,7 +13,7 @@ export default function QuickExpenseModal({ categories = [] }) {
 	// Arreglo plano -> objeto agrupado por macro_type ('Necesidades', 'Deseos', …).
 	const groupedCategories = useMemo(() => {
 		return categories.reduce((groups, category) => {
-			const key = category.macro_type || SIN_CLASIFICAR;
+			const key = category.macro_type || MACRO_OTROS;
 			(groups[key] ??= []).push(category);
 			return groups;
 		}, {});

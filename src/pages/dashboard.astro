@@ -6,6 +6,7 @@ import EnvelopeCard from "../components/dashboard/EnvelopeCard.astro";
 import TransactionList from "../components/dashboard/TransactionList.astro";
 import QuickExpenseModal from "../components/dashboard/QuickExpenseModal.jsx";
 import IncomeModal from "../components/dashboard/IncomeModal.jsx";
+import DashboardCharts from "../components/DashboardCharts.jsx";
 import { createSupabaseServerClient } from "../lib/supabase.js";
 
 // Ruta on-demand: necesita la sesión del usuario en cada request.
@@ -80,6 +81,7 @@ const totalBalanceCents = balances.reduce(
 const pad2 = (n: number) => String(n).padStart(2, "0");
 const lastDayOfMonth = new Date(year, month, 0); // month 1..12 -> día 0 del mes+1
 const monthEndISO = `${lastDayOfMonth.getFullYear()}-${pad2(lastDayOfMonth.getMonth() + 1)}-${pad2(lastDayOfMonth.getDate())}`;
+const monthStartISO = `${year}-${pad2(month)}-01`;
 
 const { data: deferredRows, error: deferredError } = await supabase
 	.from("transactions")
@@ -119,6 +121,58 @@ const categories = (categoryRows ?? []).map((row) => ({
 const categoryTypeByName = new Map(
 	(categoryRows ?? []).map((row) => [row.name, row.type]),
 );
+
+// --- Módulo analítico 50/30/20 ---------------------------------------------
+// Transacciones del mes en curso. El macro_type se cruza en JS contra
+// categoryRows (name -> macro_type), evitando el embed sobre la FK compuesta.
+const { data: monthTransactions, error: monthTxError } = await supabase
+	.from("transactions")
+	.select("category_id, amount_cents")
+	.eq("user_id", user.id)
+	.gte("effective_date", monthStartISO)
+	.lte("effective_date", monthEndISO);
+
+if (monthTxError) {
+	console.warn(
+		"No se pudieron cargar las transacciones del mes:",
+		monthTxError.message,
+	);
+}
+
+const macroTypeByName = new Map(
+	(categoryRows ?? []).map((row) => [row.name, row.macro_type]),
+);
+
+// Suma de GASTOS (amount_cents < 0) por macro_type. Todo en centavos (§2).
+const { totalNecesidades, totalDeseos, totalAhorro } = (
+	monthTransactions ?? []
+).reduce(
+	(acc, tx) => {
+		const cents = Number(tx.amount_cents ?? 0);
+		if (cents >= 0) return acc; // solo gastos
+		const gasto = Math.abs(cents);
+		switch (macroTypeByName.get(tx.category_id)) {
+			case "Necesidades":
+				acc.totalNecesidades += gasto;
+				break;
+			case "Deseos":
+				acc.totalDeseos += gasto;
+				break;
+			case "Ahorro":
+				acc.totalAhorro += gasto;
+				break;
+		}
+		return acc;
+	},
+	{ totalNecesidades: 0, totalDeseos: 0, totalAhorro: 0 },
+);
+
+// Ingreso del mes = suma de amount_cents > 0 (centavos).
+const ingresoMensual = (monthTransactions ?? []).reduce(
+	(sum, tx) =>
+		Number(tx.amount_cents) > 0 ? sum + Number(tx.amount_cents) : sum,
+	0,
+);
 ---
 
 <BaseLayout title="Dashboard · SalarySplitter">
@@ -153,6 +207,19 @@ const categoryTypeByName = new Map(
 					userId={user.id}
 				/>
 			</div>
+
+			<section class="space-y-3">
+				<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-neutral-500">
+					Regla 50 / 30 / 20
+				</h2>
+				<DashboardCharts
+					client:load
+					totalNecesidades={totalNecesidades}
+					totalDeseos={totalDeseos}
+					totalAhorro={totalAhorro}
+					ingresoMensual={ingresoMensual}
+				/>
+			</section>
 
 			<section class="space-y-3">
 				<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-neutral-500">

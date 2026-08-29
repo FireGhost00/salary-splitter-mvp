@@ -1,0 +1,70 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import TransactionList from "../components/TransactionList.jsx";
+import TransactionForm from "../components/TransactionForm.jsx";
+import { createSupabaseServerClient } from "../lib/supabase.js";
+
+// Ruta on-demand: requiere sesión.
+export const prerender = false;
+
+const supabase = createSupabaseServerClient(Astro);
+
+const {
+	data: { user },
+} = await supabase.auth.getUser();
+
+if (!user) {
+	return Astro.redirect("/login");
+}
+
+// `transactions.category_id` ya contiene el NOMBRE de la categoría (FK compuesta
+// (user_id, category_id) -> categories(user_id, name)), así que no hace falta un
+// embed frágil: el dato relacionado ya viene en la fila.
+const { data, error } = await supabase
+	.from("transactions")
+	.select(
+		"id, effective_date, description, label, category_id, amount_cents, transaction_type",
+	)
+	.eq("user_id", user.id)
+	.order("effective_date", { ascending: false })
+	.limit(100);
+
+if (error) {
+	throw new Error(`No se pudo cargar el historial: ${error.message}`);
+}
+
+const transactions = data ?? [];
+
+// Categorías para el <select> del formulario (categories no tiene columna id ->
+// el nombre hace de identificador).
+const { data: categoryRows } = await supabase.from("categories").select("name");
+const categories = (categoryRows ?? []).map((row) => ({
+	id: row.name,
+	name: row.name,
+}));
+---
+
+<BaseLayout title="Historial · SalarySplitter">
+	<main class="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6 sm:py-12">
+		<header class="mb-8 flex items-center justify-between gap-4">
+			<div class="space-y-1">
+				<h1 class="text-xl font-semibold tracking-tight sm:text-2xl">Historial</h1>
+				<p class="text-sm text-neutral-500">
+					Movimientos del más reciente al más antiguo.
+				</p>
+			</div>
+			<a
+				href="/dashboard"
+				class="shrink-0 rounded-lg border border-neutral-700 px-3 py-1.5 text-xs text-neutral-400 transition-colors hover:text-neutral-100"
+			>
+				← Dashboard
+			</a>
+		</header>
+
+		<div class="mb-8">
+			<TransactionForm client:load categories={categories} />
+		</div>
+
+		<TransactionList client:load transactions={transactions} />
+	</main>
+</BaseLayout>
