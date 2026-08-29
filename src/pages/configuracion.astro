@@ -1,5 +1,6 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
+import CategoryManager from "../components/CategoryManager.jsx";
 import RulesEditor from "../components/RulesEditor.jsx";
 import { createSupabaseServerClient } from "../lib/supabase.js";
 
@@ -18,7 +19,7 @@ if (!user) {
 
 const { data: categoryRows, error: catError } = await supabase
 	.from("categories")
-	.select("name");
+	.select("name, macro_type, target_amount");
 
 if (catError) {
 	throw new Error(`No se pudieron cargar las categorías: ${catError.message}`);
@@ -27,6 +28,8 @@ if (catError) {
 const categories = (categoryRows ?? []).map((row) => ({
 	id: row.name,
 	name: row.name,
+	macro_type: row.macro_type ?? "",
+	target_amount: Number(row.target_amount ?? 0),
 }));
 
 const { data: ruleRows, error: rulesError } = await supabase
@@ -46,20 +49,34 @@ const rules = ruleRows ?? [];
 		<header class="mb-8 flex items-center justify-between gap-4">
 			<div class="space-y-1">
 				<h1 class="text-xl font-semibold tracking-tight sm:text-2xl">
-					Reglas de distribución
+					Configuración
 				</h1>
-				<p class="text-sm text-neutral-500">
-					Qué porcentaje del salario va a cada categoría. Debe sumar 100%.
+				<p class="text-sm text-slate-400">
+					Tus categorías y cómo se reparte cada ingreso.
 				</p>
 			</div>
 			<a
 				href="/dashboard"
-				class="shrink-0 rounded-lg border border-neutral-700 px-3 py-1.5 text-xs text-neutral-400 transition-colors hover:text-neutral-100"
+				class="shrink-0 rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-400 transition-colors hover:text-slate-100"
 			>
 				← Dashboard
 			</a>
 		</header>
 
-		<RulesEditor client:load categories={categories} rules={rules} />
+		<div class="space-y-10">
+			<section class="space-y-3">
+				<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-slate-400">
+					Categorías
+				</h2>
+				<CategoryManager client:load categories={categories} />
+			</section>
+
+			<section class="space-y-3">
+				<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-slate-400">
+					Reparto por porcentaje
+				</h2>
+				<RulesEditor client:load categories={categories} rules={rules} />
+			</section>
+		</div>
 	</main>
 </BaseLayout>

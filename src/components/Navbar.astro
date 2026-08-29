@@ -1,0 +1,83 @@
+---
+// Barra de navegación inferior fija. Se muestra solo en las vistas protegidas
+// (BaseLayout la oculta en /login y /onboarding).
+const { pathname } = Astro.url;
+
+const links = [
+	{ href: "/dashboard", label: "Inicio" },
+	{ href: "/mes-ideal", label: "Mes ideal" },
+	{ href: "/configuracion", label: "Reglas" },
+	{ href: "/perfil", label: "Perfil" },
+];
+
+function isActive(href: string): boolean {
+	return pathname === href || pathname.startsWith(`${href}/`);
+}
+---
+
+<nav
+	class="fixed bottom-0 left-0 z-50 w-full border-t border-slate-800 bg-slate-900"
+	aria-label="Navegación principal"
+>
+	<ul class="mx-auto flex max-w-lg">
+		{
+			links.map((link) => {
+				const active = isActive(link.href);
+				return (
+					<li class="flex-1">
+						<a
+							href={link.href}
+							aria-current={active ? "page" : undefined}
+							class:list={[
+								"flex flex-col items-center gap-1 py-2.5 text-xs transition-colors",
+								active
+									? "font-bold text-emerald-400"
+									: "text-slate-500 hover:text-slate-300",
+							]}
+						>
+							<svg
+								width="20"
+								height="20"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.75"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								aria-hidden="true"
+							>
+								{link.href === "/dashboard" && (
+									<Fragment>
+										<path d="M3 10.5 12 3l9 7.5" />
+										<path d="M5 9.5V21h14V9.5" />
+									</Fragment>
+								)}
+								{link.href === "/mes-ideal" && (
+									<Fragment>
+										<circle cx="12" cy="12" r="8" />
+										<circle cx="12" cy="12" r="3" />
+									</Fragment>
+								)}
+								{link.href === "/configuracion" && (
+									<Fragment>
+										<line x1="4" y1="8" x2="20" y2="8" />
+										<circle cx="9" cy="8" r="2.5" />
+										<line x1="4" y1="16" x2="20" y2="16" />
+										<circle cx="15" cy="16" r="2.5" />
+									</Fragment>
+								)}
+								{link.href === "/perfil" && (
+									<Fragment>
+										<circle cx="12" cy="8" r="4" />
+										<path d="M4 21c0-4 3.6-6 8-6s8 2 8 6" />
+									</Fragment>
+								)}
+							</svg>
+							{link.label}
+						</a>
+					</li>
+				);
+			})
+		}
+	</ul>
+</nav>

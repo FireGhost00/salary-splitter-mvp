@@ -3,11 +3,11 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 import HeroBalance from "../components/dashboard/HeroBalance.astro";
 import QuincenaTracker from "../components/dashboard/QuincenaTracker.astro";
 import EnvelopeCard from "../components/dashboard/EnvelopeCard.astro";
-import TransactionList from "../components/dashboard/TransactionList.astro";
+import TransactionList from "../components/TransactionList.jsx";
 import QuickExpenseModal from "../components/dashboard/QuickExpenseModal.jsx";
 import IncomeModal from "../components/dashboard/IncomeModal.jsx";
 import DashboardCharts from "../components/DashboardCharts.jsx";
-import SplitButton from "../components/SplitButton.jsx";
+import DebtTracker from "../components/DebtTracker.jsx";
 import { createSupabaseServerClient } from "../lib/supabase.js";
 
 // Ruta on-demand: necesita la sesión del usuario en cada request.
@@ -24,12 +24,11 @@ if (!user) {
 	return Astro.redirect("/login");
 }
 
-// Onboarding obligatorio: sin fila en `profiles` o con base_salary nulo/cero
-// -> a /onboarding. base_salary es DECIMAL; se convierte a centavos enteros
-// (CONVENCIONES.md §2) antes de pasarlo a los componentes.
+// Onboarding obligatorio: basta con que exista la fila de perfil (nombre).
+// Ya no se usa base_salary: el saldo sube solo con ingresos manuales.
 const { data: profile, error: profileError } = await supabase
 	.from("profiles")
-	.select("first_name, base_salary")
+	.select("first_name")
 	.eq("id", user.id)
 	.maybeSingle();
 
@@ -37,13 +36,9 @@ if (profileError) {
 	throw new Error(`No se pudo cargar profiles: ${profileError.message}`);
 }
 
-const baseSalary = Number(profile?.base_salary ?? 0);
-
-if (!profile || !baseSalary) {
+if (!profile) {
 	return Astro.redirect("/onboarding");
 }
-
-const baseSalaryCents = Math.round(baseSalary * 100);
 
 // US-15: presupuesto mensual. Mes y año actuales (o vía URL para un futuro
 // selector de mes). getMonth() es 0-indexado -> +1 para el rango 1..12.
@@ -174,19 +169,81 @@ const ingresoMensual = (monthTransactions ?? []).reduce(
 		Number(tx.amount_cents) > 0 ? sum + Number(tx.amount_cents) : sum,
 	0,
 );
+
+// Historial de movimientos fragmentados (lista bajo las gráficas).
+// `transactions.category_id` ES el nombre de la categoría (FK compuesta
+// (user_id, category_id) -> categories(user_id, name)); no hace falta embed.
+const { data: feedRows, error: feedError } = await supabase
+	.from("transactions")
+	.select(
+		"id, category_id, description, label, amount_cents, transaction_type, created_at",
+	)
+	.eq("user_id", user.id)
+	.order("created_at", { ascending: false })
+	.limit(20);
+
+if (feedError) {
+	console.warn("No se pudo cargar el historial:", feedError.message);
+}
+
+const movimientos = feedRows ?? [];
+
+// --- DebtTracker: avance de pago por deuda -------------------------------
+const { data: debtCats, error: debtCatError } = await supabase
+	.from("categories")
+	.select("name, target_amount")
+	.eq("user_id", user.id)
+	.eq("macro_type", "deuda");
+
+if (debtCatError) {
+	console.warn("No se pudieron cargar las deudas:", debtCatError.message);
+}
+
+const debtNames = (debtCats ?? []).map((c) => c.name);
+const debtPaid: Record<string, number> = {};
+
+if (debtNames.length > 0) {
+	const { data: payRows, error: payError } = await supabase
+		.from("transactions")
+		.select("category_id, amount_cents")
+		.eq("user_id", user.id)
+		.in("category_id", debtNames)
+		.gt("amount_cents", 0);
+
+	if (payError) {
+		console.warn("No se pudieron cargar los abonos:", payError.message);
+	}
+	for (const row of payRows ?? []) {
+		debtPaid[row.category_id] =
+			(debtPaid[row.category_id] ?? 0) + Number(row.amount_cents);
+	}
+}
+
+const deudas = (debtCats ?? []).map((c) => {
+	const targetCents = Number(c.target_amount ?? 0);
+	const paidCents = debtPaid[c.name] ?? 0;
+	const percent =
+		targetCents > 0
+			? Math.min(100, Math.round((paidCents / targetCents) * 100))
+			: 0;
+	return { name: c.name, paidCents, targetCents, percent };
+});
 ---
 
 <BaseLayout title="Dashboard · SalarySplitter">
-	<main class="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6 sm:py-12">
+	<div class="min-h-screen bg-slate-900 text-slate-100">
+		<main class="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6 sm:py-12">
 		<header class="mb-8 flex items-start justify-between gap-4">
 			<div class="space-y-1">
-				<h1 class="text-xl font-semibold tracking-tight sm:text-2xl">Dashboard</h1>
-				<p class="text-sm text-neutral-500">{user.email}</p>
+				<h1 class="text-xl font-semibold tracking-tight text-slate-100 sm:text-2xl">
+					Dashboard
+				</h1>
+				<p class="text-sm text-slate-400">{user.email}</p>
 			</div>
 			<form method="POST" action="/api/auth/signout">
 				<button
 					type="submit"
-					class="rounded-lg border border-neutral-700 px-3 py-1.5 text-xs text-neutral-400 transition-colors hover:text-neutral-100"
+					class="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs text-slate-400 transition-colors hover:bg-slate-700 hover:text-slate-100"
 				>
 					Salir
 				</button>
@@ -194,24 +251,24 @@ const ingresoMensual = (monthTransactions ?? []).reduce(
 		</header>
 
 		<div class="space-y-8">
+			<DebtTracker client:load debts={deudas} />
+
 			<div class="space-y-3">
 				<div class="flex items-center justify-between">
-					<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-neutral-500">
+					<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-slate-400">
 						Saldo total
 					</h2>
 					<IncomeModal client:load />
 				</div>
 				<HeroBalance
 					amountInCents={totalBalanceCents}
-					baseSalaryInCents={baseSalaryCents}
 					saldoDiferido={saldoDiferido}
 					userId={user.id}
 				/>
-				<SplitButton client:load />
 			</div>
 
 			<section class="space-y-3">
-				<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-neutral-500">
+				<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-slate-400">
 					Regla 50 / 30 / 20
 				</h2>
 				<DashboardCharts
@@ -224,14 +281,21 @@ const ingresoMensual = (monthTransactions ?? []).reduce(
 			</section>
 
 			<section class="space-y-3">
-				<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-neutral-500">
-					Quincena
+				<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-slate-400">
+					Movimientos
 				</h2>
-				<QuincenaTracker baseSalaryInCents={baseSalaryCents} />
+				<TransactionList client:load transactions={movimientos} />
 			</section>
 
 			<section class="space-y-3">
-				<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-neutral-500">
+				<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-slate-400">
+					Quincena
+				</h2>
+				<QuincenaTracker />
+			</section>
+
+			<section class="space-y-3">
+				<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-slate-400">
 					Sobres
 				</h2>
 				{/* Mobile-first: 1 columna en móvil, CSS Grid de 3 columnas en escritorio. */}
@@ -247,15 +311,9 @@ const ingresoMensual = (monthTransactions ?? []).reduce(
 					}
 				</div>
 			</section>
-
-			<section class="space-y-3">
-				<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-neutral-500">
-					Movimientos
-				</h2>
-				<TransactionList supabase={supabase} userId={user.id} />
-			</section>
 		</div>
 
 		<QuickExpenseModal categories={categories} client:load />
-	</main>
+		</main>
+	</div>
 </BaseLayout>

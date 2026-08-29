@@ -2,7 +2,7 @@ import { useState } from "react";
 import { getSupabaseBrowserClient } from "../lib/supabase-browser.js";
 
 const inputClass =
-	"w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:border-neutral-500 focus:outline-none";
+	"w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500";
 
 /**
  * Formulario de acceso. El modo ("signin" | "signup") es estado de cliente; el
@@ -49,7 +49,7 @@ export default function AuthForm({
 			<button
 				type="button"
 				onClick={handleGoogle}
-				className="flex w-full items-center justify-center gap-3 rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-2.5 text-sm font-medium text-neutral-100 transition-colors hover:bg-neutral-800"
+				className="flex w-full items-center justify-center gap-3 rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm font-medium text-slate-100 transition-colors hover:bg-slate-700"
 			>
 				<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
 					<path
@@ -74,9 +74,9 @@ export default function AuthForm({
 
 			{googleError && <p className="text-xs text-rose-400">{googleError}</p>}
 
-			<div className="flex items-center gap-3 text-xs text-neutral-600">
-				<span className="h-px flex-1 bg-neutral-800" />o
-				<span className="h-px flex-1 bg-neutral-800" />
+			<div className="flex items-center gap-3 text-xs text-slate-500">
+				<span className="h-px flex-1 bg-slate-700" />o
+				<span className="h-px flex-1 bg-slate-700" />
 			</div>
 
 			<form method="post" className="space-y-4">
@@ -84,7 +84,7 @@ export default function AuthForm({
 			<input type="hidden" name="mode" value={mode} />
 
 			<label className="block space-y-1">
-				<span className="text-xs uppercase tracking-wider text-neutral-500">
+				<span className="text-xs uppercase tracking-wider text-slate-400">
 					Email
 				</span>
 				<input
@@ -97,7 +97,7 @@ export default function AuthForm({
 			</label>
 
 			<label className="block space-y-1">
-				<span className="text-xs uppercase tracking-wider text-neutral-500">
+				<span className="text-xs uppercase tracking-wider text-slate-400">
 					Contraseña
 				</span>
 				<input
@@ -115,17 +115,17 @@ export default function AuthForm({
 
 			<button
 				type="submit"
-				className="w-full rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-500"
+				className="w-full rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-500"
 			>
 				{isSignup ? "Crear cuenta" : "Iniciar sesión"}
 			</button>
 
-			<p className="text-center text-xs text-neutral-500">
+			<p className="text-center text-xs text-slate-400">
 				{isSignup ? "¿Ya tienes cuenta?" : "¿Aún no tienes cuenta?"}{" "}
 				<button
 					type="button"
 					onClick={() => setMode(isSignup ? "signin" : "signup")}
-					className="font-medium text-emerald-400 underline-offset-4 hover:underline"
+					className="font-medium text-indigo-400 underline-offset-4 hover:underline"
 				>
 					{isSignup ? "Iniciar sesión" : "Crear cuenta"}
 				</button>

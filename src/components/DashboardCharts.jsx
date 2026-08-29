@@ -45,15 +45,15 @@ export default function DashboardCharts({
 	}));
 
 	return (
-		<div className="rounded-xl border border-neutral-800 bg-neutral-950 p-4">
+		<div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
 			{income <= 0 && (
-				<p className="mb-3 text-xs text-neutral-500">
+				<p className="mb-3 text-xs text-slate-400">
 					Sin ingresos registrados este mes.
 				</p>
 			)}
 
 			{/* Barra de progreso horizontal: anchos dinámicos por porcentaje */}
-			<div className="flex h-6 w-full overflow-hidden rounded-full bg-slate-800">
+			<div className="flex h-6 w-full overflow-hidden rounded-full bg-slate-700">
 				{rows.map((row) => (
 					<div
 						key={row.key}
@@ -69,20 +69,24 @@ export default function DashboardCharts({
 				{rows.map((row) => (
 					<div
 						key={row.key}
-						className="rounded-lg border border-slate-800 bg-slate-900 p-3"
+						className="rounded-lg border border-slate-700 bg-slate-900 p-3"
 					>
 						<div className="flex items-center gap-2">
 							<span
 								className={`inline-block h-2 w-2 rounded-full ${row.color}`}
 							/>
-							<span className="text-xs font-medium text-slate-200">
+							<span className="text-xs font-medium text-slate-300">
 								{row.label}
 							</span>
 						</div>
-						<p className="mt-1 font-mono text-base text-slate-100">
+						<p
+							className={`mt-1 font-mono text-base tabular-nums ${
+								row.key === "ahorro" ? "text-emerald-400" : "text-rose-400"
+							}`}
+						>
 							{formatCents(row.amountCents)}
 						</p>
-						<p className="text-xs text-slate-500">{row.pct}% del ingreso</p>
+						<p className="text-xs text-slate-400">{row.pct}% del ingreso</p>
 					</div>
 				))}
 			</div>

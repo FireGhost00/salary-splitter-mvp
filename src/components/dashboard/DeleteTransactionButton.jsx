@@ -43,7 +43,7 @@ export default function DeleteTransactionButton({ id }) {
 			onClick={handleDelete}
 			disabled={isDeleting}
 			aria-label="Eliminar movimiento"
-			className="text-slate-600 transition-colors hover:text-rose-400 disabled:cursor-not-allowed disabled:opacity-50"
+			className="text-slate-400 transition-colors hover:text-rose-400 disabled:cursor-not-allowed disabled:opacity-50"
 		>
 			<svg
 				xmlns="http://www.w3.org/2000/svg"

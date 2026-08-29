@@ -103,7 +103,7 @@ export default function DeferredManagerModal({ onClose }) {
 				role="dialog"
 				aria-modal="true"
 				aria-label="Ingresos reservados"
-				className="w-full max-w-md rounded-xl border border-slate-800 bg-slate-900 p-5"
+				className="w-full max-w-md rounded-xl border border-slate-700 bg-slate-800 p-5 shadow-xl"
 				onClick={(event) => event.stopPropagation()}
 			>
 				<div className="mb-4 flex items-center justify-between gap-3">
@@ -114,20 +114,20 @@ export default function DeferredManagerModal({ onClose }) {
 						type="button"
 						onClick={close}
 						aria-label="Cerrar"
-						className="text-slate-500 transition-colors hover:text-slate-300"
+						className="text-slate-400 transition-colors hover:text-slate-200"
 					>
 						✕
 					</button>
 				</div>
 
-				{loading && <p className="text-xs text-slate-500">Cargando…</p>}
+				{loading && <p className="text-xs text-slate-400">Cargando…</p>}
 				{error && <p className="text-xs text-rose-400">{error}</p>}
 				{!loading && !error && rows.length === 0 && (
-					<p className="text-xs text-slate-500">No hay ingresos reservados.</p>
+					<p className="text-xs text-slate-400">No hay ingresos reservados.</p>
 				)}
 
 				{rows.length > 0 && (
-					<ul className="divide-y divide-slate-800">
+					<ul className="divide-y divide-slate-700">
 						{rows.map((row) => (
 							<li
 								key={row.id}
@@ -137,13 +137,13 @@ export default function DeferredManagerModal({ onClose }) {
 									<p className="truncate text-sm text-slate-100">
 										{row.description || row.label}
 									</p>
-									<p className="text-xs text-slate-500">
+									<p className="text-xs text-slate-400">
 										{formatDate(row.effective_date)}
 									</p>
 								</div>
 
 								<div className="flex shrink-0 items-center gap-3">
-									<span className="font-mono text-sm text-emerald-400">
+									<span className="font-mono text-sm tabular-nums text-emerald-400">
 										{formatCents(row.amount_cents)}
 									</span>
 									<button
@@ -151,7 +151,7 @@ export default function DeferredManagerModal({ onClose }) {
 										onClick={() => handleDelete(row.id)}
 										disabled={deletingId === row.id}
 										aria-label="Eliminar ingreso reservado"
-										className="text-slate-600 transition-colors hover:text-rose-400 disabled:cursor-not-allowed disabled:opacity-50"
+										className="text-slate-400 transition-colors hover:text-rose-400 disabled:cursor-not-allowed disabled:opacity-50"
 									>
 										<svg
 											xmlns="http://www.w3.org/2000/svg"

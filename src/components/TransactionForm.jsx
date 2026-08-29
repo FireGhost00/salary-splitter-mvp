@@ -8,7 +8,7 @@ function todayISO() {
 }
 
 const inputClass =
-	"w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-slate-500 focus:outline-none";
+	"w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500";
 
 /**
  * Formulario de captura de un movimiento. Hace POST a /api/transactions y, si
@@ -79,11 +79,11 @@ export default function TransactionForm({ categories = [], onCreated }) {
 	return (
 		<form
 			onSubmit={handleSubmit}
-			className="space-y-4 rounded-xl border border-slate-800 bg-slate-900 p-5"
+			className="space-y-4 rounded-xl border border-slate-700 bg-slate-800 p-5"
 		>
 			<div className="grid gap-4 sm:grid-cols-2">
 				<label className="block space-y-1">
-					<span className="text-xs uppercase tracking-wider text-slate-500">
+					<span className="text-xs uppercase tracking-wider text-slate-400">
 						Monto
 					</span>
 					<input
@@ -100,7 +100,7 @@ export default function TransactionForm({ categories = [], onCreated }) {
 				</label>
 
 				<label className="block space-y-1">
-					<span className="text-xs uppercase tracking-wider text-slate-500">
+					<span className="text-xs uppercase tracking-wider text-slate-400">
 						Tipo
 					</span>
 					<select
@@ -114,7 +114,7 @@ export default function TransactionForm({ categories = [], onCreated }) {
 				</label>
 
 				<label className="block space-y-1">
-					<span className="text-xs uppercase tracking-wider text-slate-500">
+					<span className="text-xs uppercase tracking-wider text-slate-400">
 						Categoría
 					</span>
 					<select
@@ -134,7 +134,7 @@ export default function TransactionForm({ categories = [], onCreated }) {
 				</label>
 
 				<label className="block space-y-1">
-					<span className="text-xs uppercase tracking-wider text-slate-500">
+					<span className="text-xs uppercase tracking-wider text-slate-400">
 						Fecha
 					</span>
 					<input
@@ -148,7 +148,7 @@ export default function TransactionForm({ categories = [], onCreated }) {
 			</div>
 
 			<label className="block space-y-1">
-				<span className="text-xs uppercase tracking-wider text-slate-500">
+				<span className="text-xs uppercase tracking-wider text-slate-400">
 					Descripción (opcional)
 				</span>
 				<input
@@ -165,7 +165,7 @@ export default function TransactionForm({ categories = [], onCreated }) {
 			<button
 				type="submit"
 				disabled={isSubmitting}
-				className="w-full rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+				className="w-full rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
 			>
 				{isSubmitting ? "Guardando…" : "Guardar movimiento"}
 			</button>

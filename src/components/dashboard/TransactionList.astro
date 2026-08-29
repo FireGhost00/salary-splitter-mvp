@@ -120,7 +120,7 @@ const groupedTransactions = transactions.reduce(
 );
 
 const selectClass =
-	"rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs text-slate-300 focus:border-slate-500 focus:outline-none";
+	"rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500";
 ---
 
 <div class="space-y-3">
@@ -139,18 +139,18 @@ const selectClass =
 		<noscript>
 			<button
 				type="submit"
-				class="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300"
+				class="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs text-slate-300"
 			>
 				Aplicar
 			</button>
 		</noscript>
 	</form>
 
-	<div class="overflow-x-auto rounded-xl border border-slate-800">
+	<div class="overflow-x-auto rounded-xl border border-slate-700 bg-slate-800">
 		<table class="w-full text-sm">
 			<thead>
 				<tr
-					class="border-b border-slate-800 text-left text-xs uppercase tracking-wider text-slate-500"
+					class="border-b border-slate-700 text-left text-xs uppercase tracking-wider text-slate-400"
 				>
 					<th class="px-4 py-2 font-medium">Concepto</th>
 					<th class="px-4 py-2 font-medium">Tipo</th>
@@ -159,11 +159,11 @@ const selectClass =
 					<th class="px-4 py-2"><span class="sr-only">Acciones</span></th>
 				</tr>
 			</thead>
-			<tbody class="divide-y divide-slate-800">
+			<tbody class="divide-y divide-slate-700">
 				{
 					transactions.length === 0 && (
 						<tr>
-							<td colspan="5" class="px-4 py-6 text-center text-slate-500">
+							<td colspan="5" class="px-4 py-6 text-center text-slate-400">
 								Sin movimientos con estos filtros.
 							</td>
 						</tr>
@@ -172,7 +172,7 @@ const selectClass =
 				{
 					Object.entries(groupedTransactions).map(([groupTitle, rows]) => (
 						<Fragment>
-							<tr class="border-y border-slate-800 bg-slate-900/60">
+							<tr class="border-y border-slate-700 bg-slate-900">
 								<th
 									colspan="5"
 									scope="colgroup"
@@ -190,7 +190,7 @@ const selectClass =
 									<td class="max-w-[8rem] truncate px-4 py-2.5 text-slate-400">
 										{tx.transaction_type}
 									</td>
-									<td class="truncate px-4 py-2.5 text-slate-500">
+									<td class="truncate px-4 py-2.5 text-slate-400">
 										{tx.created_at
 											? dateFormatter.format(new Date(tx.created_at))
 											: "—"}
@@ -224,35 +224,35 @@ const selectClass =
 				<a
 					href={pageHref(page - 1)}
 					rel="prev"
-					class="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 transition-colors hover:border-slate-500 hover:text-slate-100"
+					class="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs text-slate-400 transition-colors hover:border-slate-600 hover:text-slate-100"
 				>
 					← Anterior
 				</a>
 			) : (
 				<span
 					aria-disabled="true"
-					class="cursor-not-allowed rounded-lg border border-slate-800 px-3 py-1.5 text-xs text-slate-600"
+					class="cursor-not-allowed rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-600"
 				>
 					← Anterior
 				</span>
 			)
 		}
 
-		<span class="text-xs text-slate-500">Página {page} de {totalPages}</span>
+		<span class="text-xs text-slate-400">Página {page} de {totalPages}</span>
 
 		{
 			hasNext ? (
 				<a
 					href={pageHref(page + 1)}
 					rel="next"
-					class="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 transition-colors hover:border-slate-500 hover:text-slate-100"
+					class="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs text-slate-400 transition-colors hover:border-slate-600 hover:text-slate-100"
 				>
 					Siguiente →
 				</a>
 			) : (
 				<span
 					aria-disabled="true"
-					class="cursor-not-allowed rounded-lg border border-slate-800 px-3 py-1.5 text-xs text-slate-600"
+					class="cursor-not-allowed rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-600"
 				>
 					Siguiente →
 				</span>

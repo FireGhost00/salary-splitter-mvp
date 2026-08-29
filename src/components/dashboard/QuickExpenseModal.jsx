@@ -91,7 +91,7 @@ export default function QuickExpenseModal({ categories = [] }) {
 				type="button"
 				onClick={() => setIsOpen(true)}
 				aria-label="Registrar gasto rápido"
-				className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full border border-neutral-700 bg-neutral-900 text-2xl leading-none text-neutral-100 shadow-lg transition-colors hover:bg-neutral-800"
+				className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-2xl leading-none text-slate-100 shadow-lg transition-colors hover:bg-slate-700"
 			>
 				+
 			</button>
@@ -105,7 +105,7 @@ export default function QuickExpenseModal({ categories = [] }) {
 						role="dialog"
 						aria-modal="true"
 						aria-label="Gasto rápido"
-						className="w-full max-w-sm rounded-xl border border-slate-800 bg-slate-900 p-5"
+						className="w-full max-w-sm rounded-xl border border-slate-700 bg-slate-800 p-5 shadow-xl"
 						onClick={(event) => event.stopPropagation()}
 					>
 						<div className="mb-4 flex items-center justify-between">
@@ -114,7 +114,7 @@ export default function QuickExpenseModal({ categories = [] }) {
 								type="button"
 								onClick={close}
 								aria-label="Cerrar"
-								className="text-slate-500 transition-colors hover:text-slate-300"
+								className="text-slate-400 transition-colors hover:text-slate-200"
 							>
 								✕
 							</button>
@@ -122,25 +122,25 @@ export default function QuickExpenseModal({ categories = [] }) {
 
 						<form onSubmit={handleSubmit} className="space-y-4">
 							<label className="block space-y-1">
-								<span className="text-xs uppercase tracking-wider text-slate-500">
+								<span className="text-xs uppercase tracking-wider text-slate-400">
 									Categoría
 								</span>
 								<select
 									value={categoryId}
 									onChange={(event) => setCategoryId(event.target.value)}
-									className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-slate-500 focus:outline-none"
+									className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
 								>
 									{Object.entries(groupedCategories).map(([macroType, cats]) => (
 										<optgroup
 											key={macroType}
 											label={macroType}
-											className="bg-slate-950 text-slate-400"
+											className="bg-slate-900 text-slate-400"
 										>
 											{cats.map((cat) => (
 												<option
 													key={cat.id}
 													value={cat.id}
-													className="bg-slate-950 text-slate-100"
+													className="bg-slate-900 text-slate-100"
 												>
 													{cat.name}
 												</option>
@@ -151,7 +151,7 @@ export default function QuickExpenseModal({ categories = [] }) {
 							</label>
 
 							<label className="block space-y-1">
-								<span className="text-xs uppercase tracking-wider text-slate-500">
+								<span className="text-xs uppercase tracking-wider text-slate-400">
 									Monto
 								</span>
 								<input
@@ -163,12 +163,12 @@ export default function QuickExpenseModal({ categories = [] }) {
 									required
 									value={amountText}
 									onChange={(event) => setAmountText(event.target.value)}
-									className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm text-slate-100 focus:border-slate-500 focus:outline-none"
+									className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-sm text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
 								/>
 							</label>
 
 							<label className="block space-y-1">
-								<span className="text-xs uppercase tracking-wider text-slate-500">
+								<span className="text-xs uppercase tracking-wider text-slate-400">
 									Concepto o Nota (Opcional)
 								</span>
 								<input
@@ -176,7 +176,7 @@ export default function QuickExpenseModal({ categories = [] }) {
 									value={description}
 									onChange={(event) => setDescription(event.target.value)}
 									placeholder="Ej. Súper del sábado"
-									className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-slate-500 focus:outline-none"
+									className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
 								/>
 							</label>
 
@@ -185,7 +185,7 @@ export default function QuickExpenseModal({ categories = [] }) {
 							<button
 								type="submit"
 								disabled={isSubmitting}
-								className="w-full rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+								className="w-full rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
 							>
 								{isSubmitting ? "Descontando…" : "Descontar"}
 							</button>

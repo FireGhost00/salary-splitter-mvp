@@ -27,7 +27,7 @@ export default function DeferredFunds({ saldoDiferidoInCents = 0, userId }) {
 			<button
 				type="button"
 				onClick={() => setIsOpen(true)}
-				className="mt-2 cursor-pointer text-sm text-green-400 underline-offset-4 transition hover:underline hover:opacity-80"
+				className="mt-2 cursor-pointer text-sm tabular-nums text-emerald-400 underline-offset-4 transition hover:text-emerald-300 hover:underline"
 			>
 				+ {formatCents(saldoDiferidoInCents)} reservados para el próximo mes
 			</button>

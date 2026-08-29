@@ -20,12 +20,13 @@ let errorMessage: string | null = null;
 if (Astro.request.method === "POST") {
 	const form = await Astro.request.formData();
 	const firstName = String(form.get("first_name") ?? "").trim();
-	const baseSalary = Number.parseFloat(String(form.get("base_salary") ?? ""));
+	// base_salary es ahora opcional (referencia, no se usa para calcular saldos).
+	const parsedSalary = Number.parseFloat(String(form.get("base_salary") ?? ""));
+	const baseSalary =
+		Number.isFinite(parsedSalary) && parsedSalary > 0 ? parsedSalary : 0;
 
 	if (!firstName) {
 		errorMessage = "El nombre es obligatorio.";
-	} else if (!Number.isFinite(baseSalary) || baseSalary <= 0) {
-		errorMessage = "Introduce un salario base mayor que 0.";
 	} else {
 		// upsert por PK (id): sirve tanto para el alta como para editar luego.
 		const { error: profileError } = await supabase.from("profiles").upsert({
@@ -37,18 +38,9 @@ if (Astro.request.method === "POST") {
 		if (profileError) {
 			errorMessage = profileError.message;
 		} else {
-			// Seeding vía RPC: la función crea las categorías por defecto solo si el
-			// usuario aún no tiene ninguna (IF NOT EXISTS del lado de Postgres).
-			const { error: seedError } = await supabase.rpc(
-				"crear_categorias_defecto",
-				{ nuevo_usuario_id: user.id },
-			);
-
-			if (seedError) {
-				errorMessage = `Perfil guardado, pero falló el alta de categorías: ${seedError.message}`;
-			} else {
-				return Astro.redirect("/dashboard");
-			}
+			// Categorías 100% dinámicas: el usuario las crea en /configuracion.
+			// Ya no se siembran categorías por defecto.
+			return Astro.redirect("/dashboard");
 		}
 	}
 }
@@ -67,27 +59,27 @@ const { data: profile } = await supabase
 	>
 		<header class="mb-8 space-y-1">
 			<h1 class="text-xl font-semibold tracking-tight">Casi listo</h1>
-			<p class="text-sm text-neutral-500">
+			<p class="text-sm text-slate-400">
 				Necesitamos tu nombre y tu salario base para calcular los sobres.
 			</p>
 		</header>
 
 		<form method="POST" class="space-y-4">
 			<label class="block space-y-1">
-				<span class="text-xs uppercase tracking-wider text-neutral-500">Nombre</span>
+				<span class="text-xs uppercase tracking-wider text-slate-400">Nombre</span>
 				<input
 					type="text"
 					name="first_name"
 					required
 					value={profile?.first_name ?? ""}
 					autocomplete="given-name"
-					class="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:border-neutral-500 focus:outline-none"
+					class="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
 				/>
 			</label>
 
 			<label class="block space-y-1">
-				<span class="text-xs uppercase tracking-wider text-neutral-500">
-					Salario base (quincenal o mensual)
+				<span class="text-xs uppercase tracking-wider text-slate-400">
+					Salario base <span class="normal-case text-slate-500">(opcional, solo referencia)</span>
 				</span>
 				<input
 					type="number"
@@ -95,10 +87,9 @@ const { data: profile } = await supabase
 					inputmode="decimal"
 					step="0.01"
 					min="0"
-					required
 					placeholder="0.00"
 					value={profile?.base_salary ?? ""}
-					class="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 font-mono text-sm text-neutral-100 focus:border-neutral-500 focus:outline-none"
+					class="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-sm text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
 				/>
 			</label>
 

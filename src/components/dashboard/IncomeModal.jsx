@@ -1,33 +1,19 @@
 import { useEffect, useState } from "react";
 
-const QUINCENAS = [
-	{ value: "Q1", label: "Quincena 1" },
-	{ value: "Q2", label: "Quincena 2" },
-];
-
-/** Quincena sugerida según el día del mes (1–15 => Q1). */
-function defaultQuincena() {
-	return new Date().getDate() <= 15 ? "Q1" : "Q2";
-}
-
 /**
- * Isla interactiva: botón + modal para registrar un ingreso (salario). Al enviar
- * hace POST /api/distribute con el monto; el endpoint lo reparte entre los
- * sobres según las reglas del usuario. El monto se envía en la moneda (dólares);
- * la conversión a centavos ocurre en el servidor (CONVENCIONES.md §2).
+ * Isla interactiva: botón "+ Ingreso" + modal. El usuario mete el monto real
+ * (ej. 1500.50); el frontend lo pasa a centavos (× 100) y hace POST a
+ * /api/register-income, que lo reparte entre los sobres según distribution_rules.
  */
 export default function IncomeModal() {
 	const [isOpen, setIsOpen] = useState(false);
-	const [quincena, setQuincena] = useState(defaultQuincena());
 	const [amountText, setAmountText] = useState("");
-	const [applyNextMonth, setApplyNextMonth] = useState(false);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [error, setError] = useState(null);
 
 	function close() {
 		setIsOpen(false);
 		setAmountText("");
-		setApplyNextMonth(false);
 		setError(null);
 	}
 
@@ -49,29 +35,21 @@ export default function IncomeModal() {
 			setError("Introduce un monto mayor que 0.");
 			return;
 		}
-		if (quincena !== "Q1" && quincena !== "Q2") {
-			setError("Selecciona una quincena válida.");
-			return;
-		}
+
+		// Dólares -> centavos enteros (§2) antes de enviar.
+		const amountCents = Math.round(amount * 100);
 
 		setIsSubmitting(true);
 		setError(null);
 		try {
-			const response = await fetch("/api/distribute", {
+			const response = await fetch("/api/register-income", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				// US-13: la quincena seleccionada viaja en el payload.
-				// US-15: apply_next_month controla el effective_date en el servidor.
-				body: JSON.stringify({
-					salary: amount,
-					quincena,
-					apply_next_month: applyNextMonth,
-				}),
+				body: JSON.stringify({ amount_cents: amountCents }),
 			});
 
-			if (response.status === 200) {
+			if (response.ok) {
 				close();
-				// Recarga para reflejar los nuevos saldos (aún no hay store global).
 				window.location.reload();
 				return;
 			}
@@ -90,7 +68,7 @@ export default function IncomeModal() {
 			<button
 				type="button"
 				onClick={() => setIsOpen(true)}
-				className="rounded-lg border border-emerald-600/60 bg-emerald-600/10 px-3 py-1.5 text-xs font-semibold text-emerald-300 transition-colors hover:bg-emerald-600/20"
+				className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-300 transition-colors hover:bg-emerald-500/20"
 			>
 				+ Ingreso
 			</button>
@@ -104,16 +82,18 @@ export default function IncomeModal() {
 						role="dialog"
 						aria-modal="true"
 						aria-label="Registrar ingreso"
-						className="w-full max-w-sm rounded-xl border border-slate-800 bg-slate-900 p-5"
+						className="w-full max-w-sm rounded-xl border border-slate-700 bg-slate-800 p-5 shadow-xl"
 						onClick={(event) => event.stopPropagation()}
 					>
 						<div className="mb-4 flex items-center justify-between">
-							<h2 className="text-sm font-semibold text-slate-100">Registrar ingreso</h2>
+							<h2 className="text-sm font-semibold text-slate-100">
+								Registrar ingreso
+							</h2>
 							<button
 								type="button"
 								onClick={close}
 								aria-label="Cerrar"
-								className="text-slate-500 transition-colors hover:text-slate-300"
+								className="text-slate-400 transition-colors hover:text-slate-200"
 							>
 								✕
 							</button>
@@ -121,24 +101,7 @@ export default function IncomeModal() {
 
 						<form onSubmit={handleSubmit} className="space-y-4">
 							<label className="block space-y-1">
-								<span className="text-xs uppercase tracking-wider text-slate-500">
-									Quincena
-								</span>
-								<select
-									value={quincena}
-									onChange={(event) => setQuincena(event.target.value)}
-									className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-slate-500 focus:outline-none"
-								>
-									{QUINCENAS.map((option) => (
-										<option key={option.value} value={option.value}>
-											{option.label}
-										</option>
-									))}
-								</select>
-							</label>
-
-							<label className="block space-y-1">
-								<span className="text-xs uppercase tracking-wider text-slate-500">
+								<span className="text-xs uppercase tracking-wider text-slate-400">
 									Monto
 								</span>
 								<input
@@ -150,28 +113,22 @@ export default function IncomeModal() {
 									required
 									value={amountText}
 									onChange={(event) => setAmountText(event.target.value)}
-									className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm text-slate-100 focus:border-slate-500 focus:outline-none"
+									className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-sm text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
 								/>
 							</label>
 
-							<label className="flex items-center gap-2 text-xs text-slate-300">
-								<input
-									type="checkbox"
-									checked={applyNextMonth}
-									onChange={(event) => setApplyNextMonth(event.target.checked)}
-									className="h-4 w-4 rounded border-slate-700 bg-slate-950 accent-emerald-600"
-								/>
-								Aplicar al próximo mes
-							</label>
+							<p className="text-xs text-slate-400">
+								Se repartirá entre tus sobres según las reglas de distribución.
+							</p>
 
 							{error && <p className="text-xs text-rose-400">{error}</p>}
 
 							<button
 								type="submit"
 								disabled={isSubmitting}
-								className="w-full rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+								className="w-full rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
 							>
-								{isSubmitting ? "Distribuyendo…" : "Distribuir"}
+								{isSubmitting ? "Distribuyendo…" : "Registrar y distribuir"}
 							</button>
 						</form>
 					</div>

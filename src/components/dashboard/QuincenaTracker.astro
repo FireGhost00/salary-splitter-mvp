@@ -1,26 +1,10 @@
 ---
-import { formatCents } from "../../lib/money";
-
-interface Props {
-	/**
-	 * Salario base del usuario en centavos (profiles.base_salary). Se reparte en
-	 * dos quincenas: Math.floor(base / 2) (CONVENCIONES.md §2, sin coma flotante).
-	 */
-	baseSalaryInCents?: number;
-}
-
-const { baseSalaryInCents } = Astro.props;
-
 /**
  * Indicador de quincena. Q1 = días 1–15, Q2 = 16–fin de mes.
  * La quincena activa se calcula con la fecha del sistema.
  */
 const dayOfMonth = new Date().getDate();
 const currentQuincena: "Q1" | "Q2" = dayOfMonth <= 15 ? "Q1" : "Q2";
-
-// Monto esperado por quincena a partir del salario real (ya no hardcodeado).
-const perQuincenaCents =
-	baseSalaryInCents != null ? Math.floor(baseSalaryInCents / 2) : null;
 
 const quincenas = [
 	{ id: "Q1", label: "Q1", range: "1 – 15" },
@@ -36,19 +20,14 @@ const quincenas = [
 				<div
 					aria-current={isActive ? "true" : undefined}
 					class:list={[
-						"flex-1 rounded-lg border px-4 py-3 text-center transition-colors",
+						"flex-1 rounded-xl border px-4 py-3 text-center transition-colors",
 						isActive
 							? "border-emerald-500/60 bg-emerald-500/10 text-emerald-300"
-							: "border-neutral-800 bg-neutral-900 text-neutral-600",
+							: "border-slate-700 bg-slate-800 text-slate-400",
 					]}
 				>
 					<p class="text-sm font-semibold tracking-wide">{quincena.label}</p>
-					<p class="text-xs opacity-70">{quincena.range}</p>
-					{perQuincenaCents != null && (
-						<p class="mt-1 font-mono text-xs opacity-80">
-							{formatCents(perQuincenaCents)}
-						</p>
-					)}
+					<p class="text-xs text-slate-500">{quincena.range}</p>
 				</div>
 			);
 		})

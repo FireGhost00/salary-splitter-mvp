@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { formatCents } from "../lib/money";
 
 const MONTHS_ES = [
@@ -5,75 +6,124 @@ const MONTHS_ES = [
 	"jul", "ago", "sep", "oct", "nov", "dic",
 ];
 
-/** "2026-09-01" -> "01 sep 2026" (sin problemas de zona horaria). */
+/** ISO (created_at / date) -> "01 sep" (hora local, sin librerías). */
 function formatDate(iso) {
 	if (!iso) return "—";
-	const [y, m, d] = String(iso).slice(0, 10).split("-").map(Number);
-	if (!y || !m || !d) return "—";
-	return `${String(d).padStart(2, "0")} ${MONTHS_ES[m - 1] ?? ""} ${y}`;
+	const d = new Date(iso);
+	if (Number.isNaN(d.getTime())) return "—";
+	return `${String(d.getDate()).padStart(2, "0")} ${MONTHS_ES[d.getMonth()] ?? ""}`;
 }
 
 /**
- * Historial de movimientos (presentacional). Las filas ya vienen consultadas y
- * ordenadas desde el servidor. La división entre 100 ocurre SOLO aquí, vía
- * formatCents (CONVENCIONES.md §2), formateado como USD.
+ * Lista vertical de movimientos (Modo Oscuro). Recibe las filas ya consultadas
+ * y ordenadas en el servidor. La división entre 100 ocurre aquí vía formatCents
+ * (CONVENCIONES.md §2). Verde = ingreso, rojo = gasto. Cada fila puede borrarse
+ * (DELETE /api/delete-transaction) y se quita del estado local sin recargar.
  *
  * @param {{ transactions: Array<{
  *   id: number,
- *   effective_date: string | null,
+ *   category_id: string | null,
  *   description: string | null,
  *   label: string | null,
- *   category_id: string,
  *   amount_cents: number,
  *   transaction_type: string,
+ *   created_at?: string | null,
+ *   effective_date?: string | null,
  * }> }} props
  */
 export default function TransactionList({ transactions = [] }) {
-	if (transactions.length === 0) {
+	const [rows, setRows] = useState(transactions);
+	const [deletingId, setDeletingId] = useState(null);
+
+	async function handleDelete(id) {
+		if (deletingId != null) return;
+		if (!window.confirm("¿Estás seguro de eliminar este registro?")) return;
+
+		setDeletingId(id);
+		try {
+			const response = await fetch("/api/delete-transaction", {
+				method: "DELETE",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ id }),
+			});
+
+			if (response.ok) {
+				setRows((prev) => prev.filter((tx) => tx.id !== id));
+			} else {
+				const payload = await response.json().catch(() => ({}));
+				window.alert(payload.error ?? `Error ${response.status}.`);
+			}
+		} catch {
+			window.alert("No se pudo conectar con el servidor.");
+		} finally {
+			setDeletingId(null);
+		}
+	}
+
+	if (rows.length === 0) {
 		return (
-			<p className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-8 text-center text-sm text-slate-500">
+			<p className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-8 text-center text-sm text-slate-400">
 				Sin movimientos todavía.
 			</p>
 		);
 	}
 
 	return (
-		<div className="overflow-x-auto rounded-xl border border-slate-800">
-			<table className="w-full text-sm">
-				<thead>
-					<tr className="border-b border-slate-800 text-left text-xs uppercase tracking-wider text-slate-500">
-						<th className="px-4 py-2 font-medium">Fecha</th>
-						<th className="px-4 py-2 font-medium">Descripción</th>
-						<th className="px-4 py-2 font-medium">Categoría</th>
-						<th className="px-4 py-2 text-right font-medium">Monto</th>
-					</tr>
-				</thead>
-				<tbody className="divide-y divide-slate-800">
-					{transactions.map((tx) => {
-						const isIngreso = tx.transaction_type === "ingreso";
-						return (
-							<tr key={tx.id}>
-								<td className="whitespace-nowrap px-4 py-2.5 text-slate-400">
-									{formatDate(tx.effective_date)}
-								</td>
-								<td className="max-w-[16rem] truncate px-4 py-2.5 text-slate-100">
-									{tx.description || tx.label || "—"}
-								</td>
-								<td className="max-w-[10rem] truncate px-4 py-2.5 text-slate-400">
-									{tx.category_id}
-								</td>
-								<td
-									className={`px-4 py-2.5 text-right font-mono tabular-nums ${
-										isIngreso ? "text-emerald-400" : "text-rose-400"
-									}`}
+		<ul className="space-y-2">
+			{rows.map((tx) => {
+				const isIngreso = tx.transaction_type === "ingreso";
+				return (
+					<li
+						key={tx.id}
+						className="flex items-center justify-between gap-3 rounded-xl border border-slate-700 bg-slate-800 px-4 py-3"
+					>
+						<div className="min-w-0">
+							<p className="truncate text-sm text-slate-100">
+								{tx.description || tx.label || tx.category_id || "Movimiento"}
+							</p>
+							<p className="truncate text-xs text-slate-400">
+								{tx.category_id ?? "Sin categoría"} ·{" "}
+								{formatDate(tx.created_at ?? tx.effective_date)}
+							</p>
+						</div>
+
+						<div className="flex shrink-0 items-center gap-3">
+							<span
+								className={`font-mono text-sm tabular-nums ${
+									isIngreso ? "text-emerald-400" : "text-rose-400"
+								}`}
+							>
+								{formatCents(tx.amount_cents)}
+							</span>
+							<button
+								type="button"
+								onClick={() => handleDelete(tx.id)}
+								disabled={deletingId === tx.id}
+								aria-label="Eliminar movimiento"
+								className="text-slate-400 transition-colors hover:text-rose-500 disabled:cursor-not-allowed disabled:opacity-50"
+							>
+								<svg
+									xmlns="http://www.w3.org/2000/svg"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									strokeWidth="1.75"
+									strokeLinecap="round"
+									strokeLinejoin="round"
+									className="h-4 w-4"
+									aria-hidden="true"
 								>
-									{formatCents(tx.amount_cents)}
-								</td>
-							</tr>
-						);
-					})}
-				</tbody>
-			</table>
-		</div>
+									<path d="M3 6h18" />
+									<path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
+									<path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+									<path d="M10 11v6" />
+									<path d="M14 11v6" />
+								</svg>
+							</button>
+						</div>
+					</li>
+				);
+			})}
+		</ul>
 	);
 }
