@@ -1,8 +1,9 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
+import AuthForm from "../components/AuthForm.jsx";
 import { createSupabaseServerClient } from "../lib/supabase.js";
 
-// Ruta on-demand: inicia el flujo OAuth y redirige al proveedor.
+// Ruta on-demand: procesa el POST del formulario y setea las cookies de sesión.
 export const prerender = false;
 
 const supabase = createSupabaseServerClient(Astro);
@@ -16,20 +17,45 @@ if (user) {
 	return Astro.redirect("/dashboard");
 }
 
+// `?error=` lo pone el middleware si falla el callback de Google.
 let errorMessage: string | null = Astro.url.searchParams.get("error");
+let notice: string | null = null;
+let mode: "signin" | "signup" = "signin";
 
 if (Astro.request.method === "POST") {
-	// PKCE: signInWithOAuth genera el code_verifier y lo persiste vía setAll()
-	// (cookies). En servidor no redirige solo: devuelve la URL del proveedor.
-	const { data, error } = await supabase.auth.signInWithOAuth({
-		provider: "google",
-		options: { redirectTo: "http://localhost:4321/api/auth/callback" },
-	});
+	const form = await Astro.request.formData();
+	mode = form.get("mode") === "signup" ? "signup" : "signin";
+	const email = String(form.get("email") ?? "").trim();
+	const password = String(form.get("password") ?? "");
 
-	if (error || !data?.url) {
-		errorMessage = error?.message ?? "No se pudo iniciar sesión con Google.";
+	if (!email || !password) {
+		errorMessage = "Email y contraseña son obligatorios.";
+	} else if (mode === "signup") {
+		const { data, error } = await supabase.auth.signUp({ email, password });
+		if (error) {
+			errorMessage = error.message;
+		} else if (data.session) {
+			// Confirmación de email desactivada -> ya hay sesión.
+			return Astro.redirect("/dashboard");
+		} else {
+			// Confirmación activada -> el usuario debe confirmar por correo.
+			notice =
+				"Cuenta creada. Revisa tu correo para confirmarla y luego inicia sesión.";
+			mode = "signin";
+		}
 	} else {
-		return Astro.redirect(data.url);
+		const { error } = await supabase.auth.signInWithPassword({
+			email,
+			password,
+		});
+		if (error) {
+			errorMessage =
+				error.message === "Invalid login credentials"
+					? "Email o contraseña incorrectos."
+					: error.message;
+		} else {
+			return Astro.redirect("/dashboard");
+		}
 	}
 }
 ---
@@ -40,36 +66,14 @@ if (Astro.request.method === "POST") {
 	>
 		<header class="mb-8 space-y-1">
 			<h1 class="text-xl font-semibold tracking-tight">SalarySplitter</h1>
-			<p class="text-sm text-neutral-500">Entra para ver tus sobres.</p>
+			<p class="text-sm text-neutral-500">Entra o crea tu cuenta.</p>
 		</header>
 
-		<form method="POST">
-			<button
-				type="submit"
-				class="flex w-full items-center justify-center gap-3 rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-2.5 text-sm font-medium text-neutral-100 transition-colors hover:bg-neutral-800"
-			>
-				<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
-					<path
-						fill="#4285F4"
-						d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.76h3.57c2.08-1.92 3.27-4.74 3.27-8.09Z"
-					></path>
-					<path
-						fill="#34A853"
-						d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.76c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23Z"
-					></path>
-					<path
-						fill="#FBBC05"
-						d="M5.84 14.09a6.6 6.6 0 0 1 0-4.18V7.07H2.18a11 11 0 0 0 0 9.86l3.66-2.84Z"
-					></path>
-					<path
-						fill="#EA4335"
-						d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1A11 11 0 0 0 2.18 7.07l3.66 2.84C6.71 7.31 9.14 5.38 12 5.38Z"
-					></path>
-				</svg>
-				Continuar con Google
-			</button>
-		</form>
-
-		{errorMessage && <p class="mt-4 text-xs text-rose-400">{errorMessage}</p>}
+		<AuthForm
+			client:load
+			error={errorMessage}
+			notice={notice}
+			initialMode={mode}
+		/>
 	</main>
 </BaseLayout>

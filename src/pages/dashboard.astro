@@ -7,6 +7,7 @@ import TransactionList from "../components/dashboard/TransactionList.astro";
 import QuickExpenseModal from "../components/dashboard/QuickExpenseModal.jsx";
 import IncomeModal from "../components/dashboard/IncomeModal.jsx";
 import DashboardCharts from "../components/DashboardCharts.jsx";
+import SplitButton from "../components/SplitButton.jsx";
 import { createSupabaseServerClient } from "../lib/supabase.js";
 
 // Ruta on-demand: necesita la sesión del usuario en cada request.
@@ -206,6 +207,7 @@ const ingresoMensual = (monthTransactions ?? []).reduce(
 					saldoDiferido={saldoDiferido}
 					userId={user.id}
 				/>
+				<SplitButton client:load />
 			</div>
 
 			<section class="space-y-3">
