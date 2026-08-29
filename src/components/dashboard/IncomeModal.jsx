@@ -20,12 +20,14 @@ export default function IncomeModal() {
 	const [isOpen, setIsOpen] = useState(false);
 	const [quincena, setQuincena] = useState(defaultQuincena());
 	const [amountText, setAmountText] = useState("");
+	const [applyNextMonth, setApplyNextMonth] = useState(false);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [error, setError] = useState(null);
 
 	function close() {
 		setIsOpen(false);
 		setAmountText("");
+		setApplyNextMonth(false);
 		setError(null);
 	}
 
@@ -47,6 +49,10 @@ export default function IncomeModal() {
 			setError("Introduce un monto mayor que 0.");
 			return;
 		}
+		if (quincena !== "Q1" && quincena !== "Q2") {
+			setError("Selecciona una quincena válida.");
+			return;
+		}
 
 		setIsSubmitting(true);
 		setError(null);
@@ -54,7 +60,13 @@ export default function IncomeModal() {
 			const response = await fetch("/api/distribute", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ salary: amount, quincena }),
+				// US-13: la quincena seleccionada viaja en el payload.
+				// US-15: apply_next_month controla el effective_date en el servidor.
+				body: JSON.stringify({
+					salary: amount,
+					quincena,
+					apply_next_month: applyNextMonth,
+				}),
 			});
 
 			if (response.status === 200) {
@@ -140,6 +152,16 @@ export default function IncomeModal() {
 									onChange={(event) => setAmountText(event.target.value)}
 									className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm text-slate-100 focus:border-slate-500 focus:outline-none"
 								/>
+							</label>
+
+							<label className="flex items-center gap-2 text-xs text-slate-300">
+								<input
+									type="checkbox"
+									checked={applyNextMonth}
+									onChange={(event) => setApplyNextMonth(event.target.checked)}
+									className="h-4 w-4 rounded border-slate-700 bg-slate-950 accent-emerald-600"
+								/>
+								Aplicar al próximo mes
 							</label>
 
 							{error && <p className="text-xs text-rose-400">{error}</p>}

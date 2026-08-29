@@ -1,12 +1,14 @@
 ---
-import { formatCentsParts } from "../../lib/money";
+import { formatCents, formatCentsParts } from "../../lib/money";
 
 interface Props {
 	/** Monto en centavos (entero). Ver CONVENCIONES.md §2. */
 	amountInCents: number;
+	/** Salario base del usuario en centavos (viene de profiles.base_salary). */
+	baseSalaryInCents?: number;
 }
 
-const { amountInCents } = Astro.props;
+const { amountInCents, baseSalaryInCents } = Astro.props;
 const { minusSign, currencySymbol, integer, decimal, fraction } =
 	formatCentsParts(amountInCents);
 ---
@@ -27,7 +29,12 @@ const { minusSign, currencySymbol, integer, decimal, fraction } =
 		<span class="text-2xl text-neutral-500">{decimal}{fraction}</span>
 	</p>
 
-	<p class="mt-4 text-xs text-neutral-600">
-		<span class="text-neutral-700">raw:</span> {amountInCents} ¢
-	</p>
+	{
+		baseSalaryInCents != null && (
+			<p class="mt-4 text-xs text-neutral-600">
+				<span class="text-neutral-700">salario_base:</span>{" "}
+				{formatCents(baseSalaryInCents)}
+			</p>
+		)
+	}
 </section>

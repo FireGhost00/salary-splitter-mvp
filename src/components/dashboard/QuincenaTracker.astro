@@ -1,10 +1,26 @@
 ---
+import { formatCents } from "../../lib/money";
+
+interface Props {
+	/**
+	 * Salario base del usuario en centavos (profiles.base_salary). Se reparte en
+	 * dos quincenas: Math.floor(base / 2) (CONVENCIONES.md §2, sin coma flotante).
+	 */
+	baseSalaryInCents?: number;
+}
+
+const { baseSalaryInCents } = Astro.props;
+
 /**
  * Indicador de quincena. Q1 = días 1–15, Q2 = 16–fin de mes.
  * La quincena activa se calcula con la fecha del sistema.
  */
 const dayOfMonth = new Date().getDate();
 const currentQuincena: "Q1" | "Q2" = dayOfMonth <= 15 ? "Q1" : "Q2";
+
+// Monto esperado por quincena a partir del salario real (ya no hardcodeado).
+const perQuincenaCents =
+	baseSalaryInCents != null ? Math.floor(baseSalaryInCents / 2) : null;
 
 const quincenas = [
 	{ id: "Q1", label: "Q1", range: "1 – 15" },
@@ -28,6 +44,11 @@ const quincenas = [
 				>
 					<p class="text-sm font-semibold tracking-wide">{quincena.label}</p>
 					<p class="text-xs opacity-70">{quincena.range}</p>
+					{perQuincenaCents != null && (
+						<p class="mt-1 font-mono text-xs opacity-80">
+							{formatCents(perQuincenaCents)}
+						</p>
+					)}
 				</div>
 			);
 		})

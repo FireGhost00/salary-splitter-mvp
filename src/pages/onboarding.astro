@@ -1,0 +1,104 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { createSupabaseServerClient } from "../lib/supabase.js";
+
+// Ruta on-demand: crea/actualiza el perfil del usuario activo.
+export const prerender = false;
+
+const supabase = createSupabaseServerClient(Astro);
+
+const {
+	data: { user },
+} = await supabase.auth.getUser();
+
+if (!user) {
+	return Astro.redirect("/login");
+}
+
+let errorMessage: string | null = null;
+
+if (Astro.request.method === "POST") {
+	const form = await Astro.request.formData();
+	const firstName = String(form.get("first_name") ?? "").trim();
+	const baseSalary = Number.parseFloat(String(form.get("base_salary") ?? ""));
+
+	if (!firstName) {
+		errorMessage = "El nombre es obligatorio.";
+	} else if (!Number.isFinite(baseSalary) || baseSalary <= 0) {
+		errorMessage = "Introduce un salario base mayor que 0.";
+	} else {
+		// upsert por PK (id): sirve tanto para el alta como para editar luego.
+		const { error } = await supabase.from("profiles").upsert({
+			id: user.id,
+			first_name: firstName,
+			base_salary: baseSalary,
+		});
+
+		if (error) {
+			errorMessage = error.message;
+		} else {
+			return Astro.redirect("/dashboard");
+		}
+	}
+}
+
+// Prefill si ya existe un perfil parcial.
+const { data: profile } = await supabase
+	.from("profiles")
+	.select("first_name, base_salary")
+	.eq("id", user.id)
+	.maybeSingle();
+---
+
+<BaseLayout title="Configura tu perfil · AUTO-SALDO">
+	<main
+		class="mx-auto flex min-h-screen w-full max-w-sm flex-col justify-center px-6 py-16"
+	>
+		<header class="mb-8 space-y-1">
+			<h1 class="text-xl font-semibold tracking-tight">Casi listo</h1>
+			<p class="text-sm text-neutral-500">
+				Necesitamos tu nombre y tu salario base para calcular los sobres.
+			</p>
+		</header>
+
+		<form method="POST" class="space-y-4">
+			<label class="block space-y-1">
+				<span class="text-xs uppercase tracking-wider text-neutral-500">Nombre</span>
+				<input
+					type="text"
+					name="first_name"
+					required
+					value={profile?.first_name ?? ""}
+					autocomplete="given-name"
+					class="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 focus:border-neutral-500 focus:outline-none"
+				/>
+			</label>
+
+			<label class="block space-y-1">
+				<span class="text-xs uppercase tracking-wider text-neutral-500">
+					Salario base (quincenal o mensual)
+				</span>
+				<input
+					type="number"
+					name="base_salary"
+					inputmode="decimal"
+					step="0.01"
+					min="0"
+					required
+					placeholder="0.00"
+					value={profile?.base_salary ?? ""}
+					class="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 font-mono text-sm text-neutral-100 focus:border-neutral-500 focus:outline-none"
+				/>
+			</label>
+
+			{errorMessage && <p class="text-xs text-rose-400">{errorMessage}</p>}
+
+			<button
+				type="submit"
+				class="w-full rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-500"
+			>
+				Guardar y continuar
+			</button>
+		</form>
+	</main>
+</BaseLayout>

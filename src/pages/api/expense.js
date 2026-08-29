@@ -12,6 +12,12 @@ function json(payload, status = 200) {
 	});
 }
 
+/** Fecha local de hoy como YYYY-MM-DD (sin desfase de zona horaria). */
+function localDateISO(d = new Date()) {
+	const pad2 = (n) => String(n).padStart(2, "0");
+	return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
 /**
  * POST /api/expense
  * Body: { amount: number (dólares), category_id: string, label?: string }
@@ -68,6 +74,8 @@ export async function POST(context) {
 			label: finalLabel,
 			amount_cents,
 			transaction_type: "gasto",
+			// US-15: los gastos siempre se registran con la fecha de hoy.
+			effective_date: localDateISO(),
 		})
 		.select()
 		.single();

@@ -18,11 +18,20 @@ const orden = params.get("orden") ?? "recientes"; // recientes | antiguos
 // Antiguos => primero los más viejos.
 const ascending = orden === "antiguos";
 
+// US-15: acota el historial al mes actual mediante effective_date.
+const monthRef = new Date();
+const pad2 = (n: number) => String(n).padStart(2, "0");
+const monthStart = `${monthRef.getFullYear()}-${pad2(monthRef.getMonth() + 1)}-01`;
+const lastDay = new Date(monthRef.getFullYear(), monthRef.getMonth() + 1, 0);
+const monthEnd = `${lastDay.getFullYear()}-${pad2(lastDay.getMonth() + 1)}-${pad2(lastDay.getDate())}`;
+
 let query = supabase
 	.from("transactions")
-	.select("id, label, amount_cents, transaction_type, created_at", {
+	.select("id, label, amount_cents, transaction_type, created_at, effective_date", {
 		count: "exact",
-	});
+	})
+	.gte("effective_date", monthStart)
+	.lte("effective_date", monthEnd);
 
 // Ingresos guardan amount_cents > 0; gastos, amount_cents < 0 (CONVENCIONES.md §2).
 if (tipo === "ingresos") {
@@ -67,6 +76,44 @@ const dateFormatter = new Intl.DateTimeFormat("es", {
 	day: "2-digit",
 	month: "short",
 });
+
+// US-14: agrupación por día local.
+function sameLocalDay(a: Date, b: Date): boolean {
+	return (
+		a.getFullYear() === b.getFullYear() &&
+		a.getMonth() === b.getMonth() &&
+		a.getDate() === b.getDate()
+	);
+}
+
+/**
+ * Compara la fecha de la transacción con la fecha actual del sistema:
+ * mismo día -> "Hoy", día anterior -> "Ayer", si no -> "DD MMM" (ej. "26 ago").
+ */
+function groupKey(rawDate: string | null): string {
+	if (!rawDate) return "Sin fecha";
+	const date = new Date(rawDate);
+	if (Number.isNaN(date.getTime())) return "Sin fecha";
+
+	const today = new Date();
+	const yesterday = new Date(today);
+	yesterday.setDate(today.getDate() - 1);
+
+	if (sameLocalDay(date, today)) return "Hoy";
+	if (sameLocalDay(date, yesterday)) return "Ayer";
+	return dateFormatter.format(date);
+}
+
+// El orden de inserción de las llaves respeta el orden que ya trae Supabase
+// (según el filtro `orden`), así que los grupos salen cronológicamente.
+const groupedTransactions = transactions.reduce(
+	(groups, tx) => {
+		const key = groupKey(tx.created_at);
+		(groups[key] ??= []).push(tx);
+		return groups;
+	},
+	{} as Record<string, typeof transactions>,
+);
 
 const selectClass =
 	"rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs text-slate-300 focus:border-slate-500 focus:outline-none";
@@ -119,27 +166,44 @@ const selectClass =
 					)
 				}
 				{
-					transactions.map((tx) => (
-						<tr>
-							<td class="px-4 py-2.5 text-slate-100">{tx.label}</td>
-							<td class="px-4 py-2.5 text-slate-400">{tx.transaction_type}</td>
-							<td class="px-4 py-2.5 text-slate-500">
-								{tx.created_at
-									? dateFormatter.format(new Date(tx.created_at))
-									: "—"}
-							</td>
-							<td
-								class:list={[
-									"px-4 py-2.5 text-right font-mono tabular-nums",
-									tx.amount_cents < 0 ? "text-rose-400" : "text-emerald-400",
-								]}
-							>
-								{formatCents(tx.amount_cents)}
-							</td>
-							<td class="px-4 py-2.5 text-right">
-								<DeleteTransactionButton client:visible id={tx.id} />
-							</td>
-						</tr>
+					Object.entries(groupedTransactions).map(([groupTitle, rows]) => (
+						<Fragment>
+							<tr class="border-y border-slate-800 bg-slate-900/60">
+								<th
+									colspan="5"
+									scope="colgroup"
+									class="px-4 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500"
+								>
+									{groupTitle}
+								</th>
+							</tr>
+							{rows.map((tx) => (
+								<tr>
+									<td class="max-w-[16rem] truncate px-4 py-2.5 text-slate-100">
+										{tx.label}
+									</td>
+									<td class="max-w-[8rem] truncate px-4 py-2.5 text-slate-400">
+										{tx.transaction_type}
+									</td>
+									<td class="truncate px-4 py-2.5 text-slate-500">
+										{tx.created_at
+											? dateFormatter.format(new Date(tx.created_at))
+											: "—"}
+									</td>
+									<td
+										class:list={[
+											"px-4 py-2.5 text-right font-mono tabular-nums",
+											tx.amount_cents < 0 ? "text-rose-400" : "text-emerald-400",
+										]}
+									>
+										{formatCents(tx.amount_cents)}
+									</td>
+									<td class="px-4 py-2.5 text-right">
+										<DeleteTransactionButton client:visible id={tx.id} />
+									</td>
+								</tr>
+							))}
+						</Fragment>
 					))
 				}
 			</tbody>

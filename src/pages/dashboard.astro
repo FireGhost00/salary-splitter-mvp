@@ -22,26 +22,78 @@ if (!user) {
 	return Astro.redirect("/login");
 }
 
-// Vista ya filtrada por usuario vía RLS.
-const { data, error } = await supabase.from("category_balances").select("*");
+// Onboarding obligatorio: sin fila en `profiles` o con base_salary nulo/cero
+// -> a /onboarding. base_salary es DECIMAL; se convierte a centavos enteros
+// (CONVENCIONES.md §2) antes de pasarlo a los componentes.
+const { data: profile, error: profileError } = await supabase
+	.from("profiles")
+	.select("first_name, base_salary")
+	.eq("id", user.id)
+	.maybeSingle();
 
-if (error) {
-	throw new Error(`No se pudo cargar category_balances: ${error.message}`);
+if (profileError) {
+	throw new Error(`No se pudo cargar profiles: ${profileError.message}`);
 }
 
-const categories = data ?? [];
+const baseSalary = Number(profile?.base_salary ?? 0);
 
-// Saldo total = suma de todos los balance_cents (centavos enteros, CONVENCIONES.md §2).
-const totalBalanceCents = categories.reduce(
-	(total, category) => total + category.balance_cents,
+if (!profile || !baseSalary) {
+	return Astro.redirect("/onboarding");
+}
+
+const baseSalaryCents = Math.round(baseSalary * 100);
+
+// US-15: presupuesto mensual. Mes y año actuales (o vía URL para un futuro
+// selector de mes). getMonth() es 0-indexado -> +1 para el rango 1..12.
+const nowRef = new Date();
+const year =
+	Number.parseInt(Astro.url.searchParams.get("year") ?? "", 10) ||
+	nowRef.getFullYear();
+const month =
+	Number.parseInt(Astro.url.searchParams.get("month") ?? "", 10) ||
+	nowRef.getMonth() + 1;
+
+// Vista mensual, ya filtrada por usuario vía RLS, acotada al mes en curso.
+const { data, error } = await supabase
+	.from("monthly_balances")
+	.select("*")
+	.eq("year", year)
+	.eq("month", month);
+
+if (error) {
+	throw new Error(`No se pudo cargar monthly_balances: ${error.message}`);
+}
+
+const balances = data ?? [];
+
+// monthly_balances: { category_id (text = nombre de la categoría), month, year,
+// balance (bigint, centavos) }. Saldo total del mes = suma de todos los balance
+// (CONVENCIONES.md §2). Number() por si el bigint llega como string.
+const totalBalanceCents = balances.reduce(
+	(total, row) => total + Number(row.balance ?? 0),
 	0,
 );
 
-// El modal necesita la lista de categorías para su <select>.
-const modalCategories = categories.map((category) => ({
-	id: category.category_name,
-	title: category.category_name,
+// categories: PK compuesta (user_id, name); no existe columna id -> `name` es el
+// identificador. `type` se usa para la etiqueta de cada sobre.
+const { data: categoryRows, error: categoriesError } = await supabase
+	.from("categories")
+	.select("name, type");
+
+if (categoriesError) {
+	console.warn("No se pudo cargar categories:", categoriesError.message);
+}
+
+// Lista para el <select> del modal (forma { id, name }).
+const categories = (categoryRows ?? []).map((row) => ({
+	id: row.name,
+	name: row.name,
 }));
+
+// nombre -> type: la vista monthly_balances no trae el type de la categoría.
+const categoryTypeByName = new Map(
+	(categoryRows ?? []).map((row) => [row.name, row.type]),
+);
 ---
 
 <BaseLayout title="Dashboard · AUTO-SALDO">
@@ -69,14 +121,17 @@ const modalCategories = categories.map((category) => ({
 					</h2>
 					<IncomeModal client:load />
 				</div>
-				<HeroBalance amountInCents={totalBalanceCents} />
+				<HeroBalance
+					amountInCents={totalBalanceCents}
+					baseSalaryInCents={baseSalaryCents}
+				/>
 			</div>
 
 			<section class="space-y-3">
 				<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-neutral-500">
 					Quincena
 				</h2>
-				<QuincenaTracker />
+				<QuincenaTracker baseSalaryInCents={baseSalaryCents} />
 			</section>
 
 			<section class="space-y-3">
@@ -86,11 +141,11 @@ const modalCategories = categories.map((category) => ({
 				{/* Mobile-first: 1 columna en móvil, CSS Grid de 3 columnas en escritorio. */}
 				<div class="grid grid-cols-1 gap-4 md:grid-cols-3">
 					{
-						categories.map((category) => (
+						balances.map((row) => (
 							<EnvelopeCard
-								title={category.category_name}
-								type={category.category_type}
-								balanceInCents={category.balance_cents}
+								title={row.category_id}
+								type={categoryTypeByName.get(row.category_id) ?? ""}
+								balanceInCents={Number(row.balance ?? 0)}
 							/>
 						))
 					}
@@ -105,6 +160,6 @@ const modalCategories = categories.map((category) => ({
 			</section>
 		</div>
 
-		<QuickExpenseModal client:load categories={modalCategories} />
+		<QuickExpenseModal categories={categories} client:load />
 	</main>
 </BaseLayout>

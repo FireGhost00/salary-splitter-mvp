@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
  * rápido. Envía el monto en dólares a POST /api/expense, que lo convierte a
  * centavos negativos e inserta en `transactions`.
  *
- * @param {{ categories: { id: string, title: string }[] }} props
+ * @param {{ categories: { id: string, name: string }[] }} props
  */
 export default function QuickExpenseModal({ categories = [] }) {
 	const [isOpen, setIsOpen] = useState(false);
@@ -39,7 +39,7 @@ export default function QuickExpenseModal({ categories = [] }) {
 			return;
 		}
 
-		const category = categories.find((item) => item.id === categoryId);
+		const category = categories.find((cat) => cat.id === categoryId);
 
 		setIsSubmitting(true);
 		setError(null);
@@ -50,7 +50,7 @@ export default function QuickExpenseModal({ categories = [] }) {
 				body: JSON.stringify({
 					amount,
 					category_id: categoryId,
-					label: category?.title ?? categoryId,
+					label: category?.name ?? categoryId,
 				}),
 			});
 
@@ -115,9 +115,9 @@ export default function QuickExpenseModal({ categories = [] }) {
 									onChange={(event) => setCategoryId(event.target.value)}
 									className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-slate-500 focus:outline-none"
 								>
-									{categories.map((item) => (
-										<option key={item.id} value={item.id}>
-											{item.title}
+									{categories.map((cat) => (
+										<option key={cat.id} value={cat.id}>
+											{cat.name}
 										</option>
 									))}
 								</select>
