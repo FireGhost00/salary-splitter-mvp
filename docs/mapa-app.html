@@ -1,0 +1,577 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mapa de SalarySplitter</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..48,400;12..48,600;12..48,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+<style>
+  :root{
+    --ground:#f2f5f3;
+    --surface:#ffffff;
+    --surface-2:#e9efeb;
+    --ink:#111b16;
+    --muted:#586b62;
+    --line:#d2ddd7;
+    --emerald:#0e8f61;
+    --rose:#cf3a51;
+    --blue:#2f66d8;
+    --shadow:0 1px 2px rgba(16,26,22,.05),0 14px 32px -18px rgba(16,26,22,.18);
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --ground:#0a1210;
+      --surface:#111b17;
+      --surface-2:#18241f;
+      --ink:#e7eee9;
+      --muted:#94a69d;
+      --line:#283730;
+      --emerald:#39d29c;
+      --rose:#ff6d82;
+      --blue:#7cadff;
+      --shadow:0 1px 2px rgba(0,0,0,.4),0 18px 40px -20px rgba(0,0,0,.65);
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#0a1210;
+    --surface:#111b17;
+    --surface-2:#18241f;
+    --ink:#e7eee9;
+    --muted:#94a69d;
+    --line:#283730;
+    --emerald:#39d29c;
+    --rose:#ff6d82;
+    --blue:#7cadff;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 18px 40px -20px rgba(0,0,0,.65);
+  }
+
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0;
+    background:var(--ground);
+    color:var(--ink);
+    font-family:'IBM Plex Sans','Segoe UI',system-ui,sans-serif;
+    font-size:16px;
+    line-height:1.65;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1060px;margin:0 auto;padding:0 24px}
+
+  /* ---- header ---- */
+  header.top{padding:72px 0 8px}
+  .eyebrow{
+    font-family:'IBM Plex Mono',ui-monospace,monospace;
+    font-size:12px;letter-spacing:.22em;text-transform:uppercase;
+    color:var(--emerald);margin:0 0 18px;
+  }
+  h1{
+    font-family:'Bricolage Grotesque','IBM Plex Sans',sans-serif;
+    font-weight:700;
+    font-size:clamp(2.1rem,5vw,3.1rem);
+    line-height:1.05;
+    letter-spacing:-.02em;
+    text-wrap:balance;
+    margin:0 0 18px;
+  }
+  .lede{font-size:1.08rem;max-width:64ch;color:var(--ink);margin:0 0 22px}
+  .lede .m{color:var(--muted)}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 4px;padding:0;list-style:none}
+  .chips li{
+    font-family:'IBM Plex Mono',ui-monospace,monospace;
+    font-size:.78rem;
+    background:var(--surface-2);
+    border:1px solid var(--line);
+    border-radius:999px;
+    padding:4px 11px;
+    color:var(--muted);
+  }
+
+  main{display:flex;flex-direction:column;gap:66px;padding:56px 0 40px}
+  section{display:flex;flex-direction:column;gap:18px}
+  h2{
+    font-family:'Bricolage Grotesque','IBM Plex Sans',sans-serif;
+    font-weight:600;
+    font-size:1.42rem;
+    letter-spacing:-.01em;
+    margin:0;
+    text-wrap:balance;
+  }
+  h2 .num{
+    font-family:'IBM Plex Mono',ui-monospace,monospace;
+    font-size:.9rem;
+    color:var(--emerald);
+    margin-right:12px;
+    font-weight:500;
+  }
+  section > p{margin:0;max-width:66ch}
+  section > p .m{color:var(--muted)}
+
+  code{
+    font-family:'IBM Plex Mono',ui-monospace,monospace;
+    font-size:.88em;
+    background:var(--surface-2);
+    border:1px solid var(--line);
+    border-radius:5px;
+    padding:.06em .38em;
+  }
+
+  /* ---- figures ---- */
+  .fig{margin:0}
+  .fig-card{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:16px;
+    padding:22px;
+    box-shadow:var(--shadow);
+    overflow-x:auto;
+  }
+  .dgm{display:block;width:100%;min-width:640px;height:auto;color:var(--ink)}
+  .dgm text{font-family:'IBM Plex Sans','Segoe UI',sans-serif;fill:var(--ink)}
+  .dgm .mono{font-family:'IBM Plex Mono',ui-monospace,monospace}
+  .dgm .t{font-weight:600;font-size:13px}
+  .dgm .s{font-size:11.5px;fill:var(--muted)}
+  .dgm .lbl{font-size:11px;fill:var(--muted);letter-spacing:.03em}
+  .dgm .box{fill:var(--surface-2);stroke:var(--line);stroke-width:1.5}
+  .dgm .hub{fill:var(--surface-2);stroke:var(--ink);stroke-width:1.75}
+  .dgm .panel{fill:var(--surface);stroke:var(--line);stroke-width:1.5}
+  .dgm .flow{fill:none;stroke:var(--muted);stroke-width:1.75}
+  .dgm .flow.ok{stroke:var(--emerald)}
+  .dgm .flow.stop{stroke:var(--rose)}
+  .dgm .flow.dash{stroke-dasharray:5 4}
+  .dgm .edge-ok{stroke:var(--emerald);stroke-width:2}
+  .dgm .edge-rose{stroke:var(--rose);stroke-width:2}
+  .dgm .edge-blue{stroke:var(--blue);stroke-width:2}
+  .dgm .fill-ok{fill:var(--emerald)}
+  .dgm .fill-rose{fill:var(--rose)}
+  .dgm .fill-blue{fill:var(--blue)}
+  .dgm .mk-mut{fill:var(--muted)}
+  .dgm .mk-ok{fill:var(--emerald)}
+  .dgm .mk-stop{fill:var(--rose)}
+  .dgm .div{stroke:var(--line);stroke-width:1.5}
+
+  figcaption{
+    font-size:.9rem;
+    color:var(--muted);
+    max-width:70ch;
+    margin-top:16px;
+    padding-left:15px;
+    border-left:2px solid var(--emerald);
+  }
+  figcaption code{background:none;border:none;padding:0;color:var(--ink)}
+
+  /* ---- tables ---- */
+  .tw{overflow-x:auto;border:1px solid var(--line);border-radius:14px;background:var(--surface);box-shadow:var(--shadow)}
+  table{border-collapse:collapse;width:100%;min-width:620px;font-size:.92rem}
+  thead th{
+    text-align:left;
+    font-family:'IBM Plex Mono',ui-monospace,monospace;
+    font-weight:500;
+    font-size:11px;
+    letter-spacing:.12em;
+    text-transform:uppercase;
+    color:var(--muted);
+    padding:14px 16px;
+    border-bottom:1px solid var(--line);
+    background:var(--surface-2);
+  }
+  tbody td{padding:11px 16px;border-bottom:1px solid var(--line);vertical-align:top}
+  tbody tr:last-child td{border-bottom:none}
+  tbody td:first-child{
+    font-family:'IBM Plex Mono',ui-monospace,monospace;
+    font-size:.84rem;
+    white-space:nowrap;
+    color:var(--ink);
+  }
+  td .meth{
+    font-family:'IBM Plex Mono',ui-monospace,monospace;
+    font-size:.76rem;
+    letter-spacing:.05em;
+    color:var(--emerald);
+  }
+  td .src{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:.82rem;color:var(--muted)}
+
+  footer{
+    border-top:1px solid var(--line);
+    padding:28px 0 72px;
+    font-size:.86rem;
+    color:var(--muted);
+    max-width:72ch;
+  }
+  footer code{background:none;border:none;padding:0}
+
+  @media (max-width:560px){
+    main{gap:52px}
+    header.top{padding:48px 0 4px}
+  }
+
+  /* ---- impresión / exportar a PDF ---- */
+  @media print{
+    :root{
+      --ground:#ffffff;--surface:#ffffff;--surface-2:#f2f5f3;
+      --ink:#111b16;--muted:#4b5b53;--line:#c9d4ce;
+      --emerald:#0b7a52;--rose:#b7304544;--blue:#2a5cc4;
+      --shadow:none;
+    }
+    body{font-size:11pt}
+    .wrap{max-width:none;padding:0}
+    header.top{padding:0 0 8px}
+    main{gap:26px;padding:18px 0 0}
+    .fig-card,.tw{box-shadow:none}
+    section,figure,.tw,table{break-inside:avoid}
+    h2{break-after:avoid}
+    .dgm{min-width:0}
+    .chips{display:none}
+    a[href]:after{content:""}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <p class="eyebrow">Mapa de la aplicación</p>
+    <h1>Todo lo que hace SalarySplitter</h1>
+    <p class="lede">
+      Una app de <strong>presupuesto por sobres</strong>. Registras lo que ganas y se reparte
+      entre tus categorías <span class="m">— primero las deudas, luego las provisiones y el
+      resto por porcentajes que tú defines —</span>. Después anotas cada gasto contra su sobre
+      y ves cuánto queda, por quincena, por mes y por año.
+    </p>
+    <ul class="chips">
+      <li>Astro 7 · SSR (Node)</li>
+      <li>React 19 · islas</li>
+      <li>Tailwind 4</li>
+      <li>Supabase Auth + Postgres</li>
+      <li>RLS por usuario</li>
+      <li>@supabase/ssr</li>
+    </ul>
+  </header>
+
+  <main>
+
+    <!-- ============ 1 · REQUEST LIFECYCLE ============ -->
+    <section>
+      <h2><span class="num">01</span>Ciclo de una petición</h2>
+      <p><span class="m">Cada URL entra por</span> <code>src/middleware.js</code><span class="m">, que decide antes de renderizar nada.</span></p>
+
+      <figure class="fig">
+        <div class="fig-card">
+          <svg class="dgm" viewBox="0 0 820 440" role="img" aria-label="Diagrama del ciclo de una petición: entra por el middleware, que canjea el código OAuth, deja pasar rutas públicas, corta las protegidas sin sesión y adjunta el usuario al resto.">
+            <defs>
+              <marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" class="mk-mut"/>
+              </marker>
+              <marker id="a1ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" class="mk-ok"/>
+              </marker>
+              <marker id="a1stop" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" class="mk-stop"/>
+              </marker>
+            </defs>
+
+            <rect class="box" x="24" y="188" width="150" height="60" rx="11"/>
+            <text class="t" x="99" y="214" text-anchor="middle">Petición</text>
+            <text class="s mono" x="99" y="232" text-anchor="middle">HTTP entrante</text>
+
+            <line class="flow" x1="174" y1="218" x2="248" y2="218" marker-end="url(#a1)"/>
+
+            <rect class="hub" x="250" y="146" width="180" height="150" rx="13"/>
+            <text class="t mono" x="340" y="196" text-anchor="middle">middleware.js</text>
+            <text class="s mono" x="340" y="216" text-anchor="middle">onRequest()</text>
+            <text class="lbl" x="340" y="252" text-anchor="middle">¿pública? ¿protegida?</text>
+            <text class="lbl" x="340" y="268" text-anchor="middle">¿hay sesión?</text>
+
+            <rect class="box" x="512" y="24" width="284" height="66" rx="10"/>
+            <text class="t" x="528" y="50">Canje OAuth (PKCE)</text>
+            <text class="s mono" x="528" y="70">/dashboard?code= → sesión → /dashboard</text>
+
+            <rect class="box" x="512" y="126" width="284" height="66" rx="10"/>
+            <text class="t" x="528" y="152">Ruta pública</text>
+            <text class="s mono" x="528" y="172">/login · /api/auth/* → continúa</text>
+
+            <rect class="box" x="512" y="246" width="284" height="66" rx="10"/>
+            <text class="t" x="528" y="272">Protegida sin sesión</text>
+            <text class="s mono" x="528" y="292">→ /login   ·   API → 401 JSON</text>
+
+            <rect class="box" x="512" y="348" width="284" height="66" rx="10"/>
+            <text class="t" x="528" y="374">Protegida con sesión</text>
+            <text class="s mono" x="528" y="394">expone locals.user → SSR de la página</text>
+
+            <path class="flow ok"   d="M430,170 C 474,140 476,70 512,57"   marker-end="url(#a1ok)"/>
+            <path class="flow"      d="M430,200 C 474,190 478,162 512,159" marker-end="url(#a1)"/>
+            <path class="flow stop" d="M430,236 C 474,254 478,272 512,279" marker-end="url(#a1stop)"/>
+            <path class="flow ok"   d="M430,266 C 474,306 478,364 512,381" marker-end="url(#a1ok)"/>
+
+            <text class="lbl" x="470" y="92"  text-anchor="middle">?code=</text>
+            <text class="lbl" x="470" y="150" text-anchor="middle">pública</text>
+            <text class="lbl" x="470" y="250" text-anchor="middle">sin sesión</text>
+            <text class="lbl" x="470" y="330" text-anchor="middle">con sesión</text>
+          </svg>
+        </div>
+        <figcaption>
+          El middleware canjea el código de Google por una sesión, deja pasar <code>/login</code> y
+          <code>/api/auth/*</code>, corta toda ruta protegida sin sesión (redirect a <code>/login</code>,
+          o <code>401</code> JSON si es una API) y adjunta <code>locals.user</code> al resto. El
+          dashboard además exige que exista el perfil; si no, va a <code>/onboarding</code>.
+        </figcaption>
+      </figure>
+    </section>
+
+    <!-- ============ 2 · THE TWO ENGINES ============ -->
+    <section>
+      <h2><span class="num">02</span>Los dos motores de reparto</h2>
+      <p><span class="m">El corazón de la app: dos maneras de convertir dinero en asignaciones a sobres.</span></p>
+
+      <figure class="fig">
+        <div class="fig-card">
+          <svg class="dgm" viewBox="0 0 860 520" role="img" aria-label="Comparación de los dos motores. A la izquierda, distribute parte un sueldo en porcentajes fijos. A la derecha, register-income vuelca el ingreso en cascada: deudas, luego provisiones, y el sobrante por porcentaje.">
+            <defs>
+              <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" class="mk-mut"/>
+              </marker>
+            </defs>
+
+            <line class="div" x1="430" y1="28" x2="430" y2="492"/>
+
+            <text class="t mono" x="28" y="40">POST /api/distribute</text>
+            <text class="lbl" x="28" y="60">Repartir un sueldo — porcentajes fijos</text>
+
+            <rect class="fill-ok"   x="28" y="78" width="192" height="26" opacity="0.85"/>
+            <rect class="fill-blue" x="220" y="78" width="115" height="26" opacity="0.85"/>
+            <rect class="fill-rose" x="335" y="78" width="77" height="26" opacity="0.85"/>
+            <text class="mono" x="124" y="96" text-anchor="middle" font-size="11" fill="#fff">50%</text>
+            <text class="mono" x="277" y="96" text-anchor="middle" font-size="11" fill="#fff">30%</text>
+            <text class="mono" x="373" y="96" text-anchor="middle" font-size="11" fill="#fff">20%</text>
+            <text class="lbl" x="28" y="122">distribution_rules del usuario (Σ = 100)</text>
+
+            <rect class="box" x="28" y="140" width="384" height="52" rx="9"/>
+            <text class="s" x="220" y="171" text-anchor="middle">Entrada: salario + ciclo (Q1 / Q2)</text>
+
+            <line class="flow" x1="220" y1="192" x2="220" y2="214" marker-end="url(#a2)"/>
+            <rect class="box" x="28" y="216" width="384" height="52" rx="9"/>
+            <text class="s mono" x="220" y="247" text-anchor="middle">piso(salario × % ÷ 100) por cada regla</text>
+
+            <line class="flow" x1="220" y1="268" x2="220" y2="290" marker-end="url(#a2)"/>
+            <rect class="box" x="28" y="292" width="384" height="52" rx="9"/>
+            <text class="s" x="220" y="323" text-anchor="middle">el residuo del redondeo → sobre con el % más alto</text>
+
+            <line class="flow" x1="220" y1="344" x2="220" y2="366" marker-end="url(#a2)"/>
+            <rect class="box" x="28" y="368" width="384" height="52" rx="9"/>
+            <rect class="fill-ok" x="28" y="368" width="5" height="52"/>
+            <text class="t" x="220" y="399" text-anchor="middle">1 transacción «ingreso» por sobre</text>
+
+            <text class="lbl" x="28" y="446">apply_next_month → fecha efectiva = día 1 del</text>
+            <text class="lbl" x="28" y="462">mes siguiente (queda como «saldo diferido»)</text>
+
+            <text class="t mono" x="452" y="40">POST /api/register-income</text>
+            <text class="lbl" x="452" y="60">Repartir un ingreso real — cascada</text>
+
+            <rect class="box" x="452" y="82" width="380" height="46" rx="9"/>
+            <text class="s" x="642" y="110" text-anchor="middle">Entrada: monto recibido</text>
+            <line class="flow" x1="642" y1="128" x2="642" y2="148" marker-end="url(#a2)"/>
+
+            <rect class="box" x="452" y="150" width="380" height="70" rx="10"/>
+            <rect class="fill-rose" x="452" y="150" width="6" height="70"/>
+            <text class="t" x="474" y="180">1 · Deudas</text>
+            <text class="s" x="474" y="200">llena cada categoría deuda hasta su meta</text>
+            <line class="flow" x1="642" y1="220" x2="642" y2="240" marker-end="url(#a2)"/>
+            <text class="lbl" x="656" y="234">sobrante</text>
+
+            <rect class="box" x="452" y="242" width="380" height="70" rx="10"/>
+            <rect class="fill-blue" x="452" y="242" width="6" height="70"/>
+            <text class="t" x="474" y="272">2 · Provisiones</text>
+            <text class="s" x="474" y="292">llena cada categoría provision hasta su meta</text>
+            <line class="flow" x1="642" y1="312" x2="642" y2="332" marker-end="url(#a2)"/>
+            <text class="lbl" x="656" y="326">sobrante</text>
+
+            <rect class="box" x="452" y="334" width="380" height="70" rx="10"/>
+            <rect class="fill-ok" x="452" y="334" width="6" height="70"/>
+            <text class="t" x="474" y="364">3 · Reparto por %</text>
+            <text class="s" x="474" y="384">el resto, según distribution_rules (Σ = 100)</text>
+
+            <line class="flow" x1="642" y1="404" x2="642" y2="424" marker-end="url(#a2)"/>
+            <rect class="box" x="452" y="426" width="380" height="46" rx="9"/>
+            <text class="t" x="642" y="454" text-anchor="middle">insert masivo de «ingreso»</text>
+
+            <text class="lbl" x="452" y="494">descuenta lo ya asignado este mes para no rellenar de más</text>
+          </svg>
+        </div>
+        <figcaption>
+          <code>/api/distribute</code> parte un sueldo en porcentajes fijos y crea un movimiento por
+          sobre. <code>/api/register-income</code> vuelca el ingreso en cascada por prioridad: primero
+          cubre deudas, luego provisiones, y sólo lo que sobra se reparte por porcentaje. La misma
+          matemática en centavos enteros: multiplicar, <code>Math.floor</code>, y el resto al sobre
+          con mayor peso.
+        </figcaption>
+      </figure>
+    </section>
+
+    <!-- ============ 3 · DATA MODEL ============ -->
+    <section>
+      <h2><span class="num">03</span>Modelo de datos</h2>
+      <p><span class="m">Cinco tablas en Supabase, todas aisladas por usuario con</span> RLS <span class="m">(<code>auth.uid()</code>).</span></p>
+
+      <figure class="fig">
+        <div class="fig-card">
+          <svg class="dgm" viewBox="0 0 860 540" role="img" aria-label="Modelo de datos: profiles, categories, distribution_rules, transactions y monthly_balances. categories.name es la clave que referencian las reglas y los movimientos. monthly_balances es el agregado mensual que lee el dashboard.">
+            <defs>
+              <marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" class="mk-mut"/>
+              </marker>
+            </defs>
+
+            <rect class="panel" x="24" y="34" width="220" height="104" rx="11"/>
+            <text class="t mono" x="40" y="58">profiles</text>
+            <line class="div" x1="24" y1="68" x2="244" y2="68"/>
+            <text class="s mono" x="40" y="88">id  → auth.uid()</text>
+            <text class="s mono" x="40" y="106">first_name</text>
+            <text class="s mono" x="40" y="124">base_salary  (referencia)</text>
+
+            <rect class="panel" x="616" y="34" width="220" height="122" rx="11"/>
+            <text class="t mono" x="632" y="58">monthly_balances</text>
+            <text class="lbl" x="822" y="58" text-anchor="end">derivado</text>
+            <line class="div" x1="616" y1="68" x2="836" y2="68"/>
+            <text class="s mono" x="632" y="88">category_id · month · year</text>
+            <text class="s mono" x="632" y="106">balance  (¢)</text>
+            <text class="s" x="632" y="128">saldo por sobre y mes</text>
+            <text class="s" x="632" y="146">— lo que lee el dashboard</text>
+
+            <rect class="hub" x="322" y="192" width="236" height="150" rx="12"/>
+            <text class="t mono" x="338" y="216">categories</text>
+            <line class="div" x1="322" y1="226" x2="558" y2="226"/>
+            <text class="s mono" x="338" y="246">user_id</text>
+            <text class="s mono" x="338" y="264">name   ← clave</text>
+            <text class="s mono" x="338" y="282">macro_type</text>
+            <text class="s" x="352" y="298">deuda · provision · estandar</text>
+            <text class="s mono" x="338" y="318">target_amount  (¢)</text>
+            <text class="s mono" x="338" y="336">type</text>
+
+            <rect class="panel" x="24" y="392" width="248" height="114" rx="11"/>
+            <text class="t mono" x="40" y="416">distribution_rules</text>
+            <line class="div" x1="24" y1="426" x2="272" y2="426"/>
+            <text class="s mono" x="40" y="446">user_id</text>
+            <text class="s mono" x="40" y="464">category_id  → categories.name</text>
+            <text class="s mono" x="40" y="482">percentage   (Σ = 100)</text>
+
+            <rect class="panel" x="560" y="352" width="276" height="164" rx="11"/>
+            <text class="t mono" x="576" y="376">transactions</text>
+            <line class="div" x1="560" y1="386" x2="836" y2="386"/>
+            <text class="s mono" x="576" y="406">id · user_id</text>
+            <text class="s mono" x="576" y="424">category_id  → categories.name</text>
+            <text class="s mono" x="576" y="442">amount_cents  (± entero)</text>
+            <text class="s mono" x="576" y="460">transaction_type</text>
+            <text class="s" x="590" y="476">ingreso · gasto</text>
+            <text class="s mono" x="576" y="496">effective_date · created_at</text>
+
+            <path class="flow" d="M244,92 C 290,110 300,150 330,196" marker-end="url(#a3)"/>
+            <text class="lbl" x="252" y="150">1 usuario</text>
+
+            <path class="flow" d="M322,300 C 250,330 210,360 190,388" marker-end="url(#a3)"/>
+            <text class="lbl" x="196" y="356">1 — ∗  (por name)</text>
+
+            <path class="flow" d="M558,296 C 610,320 640,336 656,350" marker-end="url(#a3)"/>
+            <text class="lbl" x="556" y="330">1 — ∗  (por name)</text>
+
+            <path class="flow dash" d="M746,352 C 792,300 800,220 772,158" marker-end="url(#a3)"/>
+            <text class="lbl" x="812" y="262" text-anchor="middle">agrega</text>
+            <text class="lbl" x="812" y="278" text-anchor="middle">mes + cat.</text>
+
+            <rect x="300" y="500" width="300" height="30" rx="15" fill="var(--surface-2)" stroke="var(--emerald)" stroke-width="1.5"/>
+            <text class="s mono" x="450" y="520" text-anchor="middle">Toda tabla: RLS por auth.uid()</text>
+          </svg>
+        </div>
+        <figcaption>
+          <code>categories.name</code> es la clave que referencian tanto las reglas de reparto como
+          los movimientos (FK compuesta con <code>user_id</code>). Los importes viven siempre como
+          <code>amount_cents</code> enteros y con signo: ingreso positivo, gasto negativo, así un
+          <code>SUM()</code> da el saldo. <code>monthly_balances</code> es el agregado mensual que
+          alimenta el dashboard.
+        </figcaption>
+      </figure>
+    </section>
+
+    <!-- ============ 4 · ROUTES ============ -->
+    <section>
+      <h2><span class="num">04</span>Rutas de la app</h2>
+      <p><span class="m">Todas server-rendered bajo demanda; todas exigen sesión salvo</span> <code>/login</code>.</p>
+      <div class="tw">
+        <table>
+          <thead><tr><th>Ruta</th><th>Qué hace</th><th>Acceso</th></tr></thead>
+          <tbody>
+            <tr><td>/</td><td>Redirige a <code>/dashboard</code></td><td>sesión</td></tr>
+            <tr><td>/login</td><td>Acceso y registro con email + contraseña, o Google (OAuth PKCE)</td><td>público</td></tr>
+            <tr><td>/onboarding</td><td>Crea el perfil (nombre obligatorio; salario de referencia opcional)</td><td>sesión</td></tr>
+            <tr><td>/dashboard</td><td>Pantalla principal: saldo disponible y diferido, avance de deudas, categorías del mes, movimientos, quincena y sobres</td><td>sesión + perfil</td></tr>
+            <tr><td>/historial</td><td>Todos los movimientos (100 últimos) y alta manual de gasto o ingreso</td><td>sesión</td></tr>
+            <tr><td>/configuracion</td><td>Categorías (crear, editar tipo y meta, borrar) y reglas de reparto por %</td><td>sesión</td></tr>
+            <tr><td>/mes-ideal</td><td>Fija la meta mensual (<code>target_amount</code>) de cada categoría</td><td>sesión</td></tr>
+            <tr><td>/resumen-anual</td><td>El año en cuatro números: ingresos, deudas pagadas, provisionado, gastos y balance neto</td><td>sesión</td></tr>
+            <tr><td>/perfil</td><td>Editar nombre y salario de referencia</td><td>sesión</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ============ 5 · API ============ -->
+    <section>
+      <h2><span class="num">05</span>Endpoints API</h2>
+      <p><span class="m">Rutas on-demand que escriben en Supabase leyendo la sesión de las cookies.</span></p>
+      <div class="tw">
+        <table>
+          <thead><tr><th>Endpoint</th><th>Método</th><th>Qué hace</th></tr></thead>
+          <tbody>
+            <tr><td>/api/distribute</td><td><span class="meth">POST</span></td><td>Parte un sueldo entre los sobres según los % de <code>distribution_rules</code>; una transacción «ingreso» por sobre. Ciclo Q1/Q2 en la etiqueta</td></tr>
+            <tr><td>/api/register-income</td><td><span class="meth">POST</span></td><td>Reparte un ingreso real en cascada: deudas → provisiones → % del remanente. Insert masivo</td></tr>
+            <tr><td>/api/expense</td><td><span class="meth">POST</span></td><td>Registra un gasto (centavos negativos, fecha de hoy) en un sobre</td></tr>
+            <tr><td>/api/transactions</td><td><span class="meth">POST</span></td><td>Alta genérica de movimiento: gasto o ingreso, con fecha y descripción opcionales</td></tr>
+            <tr><td>/api/transaction/deferred</td><td><span class="meth">GET</span></td><td>Lista los ingresos con fecha efectiva posterior al mes en curso (el «saldo diferido»)</td></tr>
+            <tr><td>/api/transaction/delete</td><td><span class="meth">POST</span></td><td>Borra un movimiento (protegido por RLS)</td></tr>
+            <tr><td>/api/delete-transaction</td><td><span class="meth">DELETE</span></td><td>Borra un movimiento filtrando por <code>id</code> y <code>user_id</code></td></tr>
+            <tr><td>/api/categories</td><td><span class="meth">POST · DELETE</span></td><td>Crea o borra una categoría (nombre, <code>macro_type</code>, meta). No deja borrar si tiene movimientos o reglas</td></tr>
+            <tr><td>/api/update-categories</td><td><span class="meth">POST</span></td><td>Actualiza <code>macro_type</code> + <code>target_amount</code> de varias categorías</td></tr>
+            <tr><td>/api/update-targets</td><td><span class="meth">POST</span></td><td>Actualiza sólo la meta (<code>target_amount</code>) de varias categorías</td></tr>
+            <tr><td>/api/update-rules</td><td><span class="meth">POST</span></td><td>Reemplaza todas las reglas de reparto del usuario; deben sumar 100</td></tr>
+            <tr><td>/api/update-profile</td><td><span class="meth">POST</span></td><td>Upsert del perfil (nombre y salario base)</td></tr>
+            <tr><td>/api/auth/callback</td><td><span class="meth">GET</span></td><td>Cierra el flujo OAuth (PKCE): canjea el <code>code</code> y setea las cookies de sesión</td></tr>
+            <tr><td>/api/auth/signout</td><td><span class="meth">POST</span></td><td>Cierra sesión y borra las cookies</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ============ 6 · DASHBOARD ANATOMY ============ -->
+    <section>
+      <h2><span class="num">06</span>Anatomía del dashboard</h2>
+      <p><span class="m">Qué muestra cada zona de la pantalla principal y de dónde sale el dato.</span></p>
+      <div class="tw">
+        <table>
+          <thead><tr><th>Zona</th><th>Muestra</th><th>Fuente</th></tr></thead>
+          <tbody>
+            <tr><td>Saldo disponible</td><td>Suma de todos los sobres del mes en curso</td><td><span class="src">monthly_balances</span></td></tr>
+            <tr><td>Saldo diferido</td><td>Ingresos reservados para un mes futuro (no cuentan en el saldo)</td><td><span class="src">transactions · fecha futura</span></td></tr>
+            <tr><td>DebtTracker</td><td>% abonado de cada deuda respecto a su meta</td><td><span class="src">categories(deuda) + abonos</span></td></tr>
+            <tr><td>Categorías del mes</td><td>Barras por categoría vs meta, agrupadas en Deudas / Provisiones / Estándar</td><td><span class="src">categories + transactions del mes</span></td></tr>
+            <tr><td>Movimientos</td><td>Los 20 movimientos más recientes</td><td><span class="src">transactions</span></td></tr>
+            <tr><td>Quincena</td><td>Q1 (días 1–15) o Q2 (16–fin) marcada según la fecha</td><td><span class="src">fecha del sistema</span></td></tr>
+            <tr><td>Sobres</td><td>Saldo de cada categoría este mes, con su tipo</td><td><span class="src">monthly_balances</span></td></tr>
+            <tr><td>Modal «Ingreso»</td><td>Lanza el reparto en cascada</td><td><span class="src">POST /api/register-income</span></td></tr>
+            <tr><td>Modal «Gasto rápido»</td><td>Registra un gasto contra un sobre</td><td><span class="src">POST /api/expense</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <footer>
+    <strong>Patrón Money.</strong> Todo el estado y los cálculos usan enteros de centavos;
+    la división entre 100 y el formato a moneda ocurren sólo al renderizar, en
+    <code>src/lib/money.ts</code>. &nbsp;·&nbsp; Sesiones con <code>@supabase/ssr</code> sobre
+    cookies; el aislamiento entre usuarios lo garantiza RLS en Postgres, no la app.
+  </footer>
+</div>
+</body>
+</html>

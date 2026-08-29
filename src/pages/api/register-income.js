@@ -60,11 +60,16 @@ export async function POST(context) {
 	}
 
 	// --- Datos ---------------------------------------------------------------
+	// Decisión arquitectónica: TODA relación cruza por el id (UUID) de la
+	// categoría, nunca por el nombre en texto plano.
 	const { data: cats, error: catError } = await supabase
 		.from("categories")
-		.select("name, macro_type, target_amount")
+		.select("id, name, macro_type, target_amount")
 		.eq("user_id", user.id);
 	if (catError) return json({ error: catError.message }, 500);
+
+	// Índice UUID -> categoría, para etiquetas legibles y validación de reglas.
+	const catById = new Map((cats ?? []).map((c) => [c.id, c]));
 
 	const { data: rules, error: rulesError } = await supabase
 		.from("distribution_rules")
@@ -72,7 +77,8 @@ export async function POST(context) {
 		.eq("user_id", user.id);
 	if (rulesError) return json({ error: rulesError.message }, 500);
 
-	// Ya asignado este mes por categoría (para no rellenar de más).
+	// Ya asignado este mes por categoría (para no rellenar de más). La llave del
+	// mapa es el UUID de la categoría (transactions.category_id ya es UUID).
 	const now = new Date();
 	const p2 = (n) => String(n).padStart(2, "0");
 	const monthStart = `${now.getFullYear()}-${p2(now.getMonth() + 1)}-01`;
@@ -98,6 +104,7 @@ export async function POST(context) {
 
 	// --- Cascada ------------------------------------------------------------
 	let remaining = amountCents;
+	// `category_id` es siempre el UUID de la categoría.
 	/** @type {{category_id: string, amount_cents: number}[]} */
 	const allocations = [];
 
@@ -111,10 +118,10 @@ export async function POST(context) {
 		for (const c of phase) {
 			if (remaining <= 0) break;
 			const target = Math.round(Number(c.target_amount));
-			const already = allocatedThisMonth[c.name] ?? 0;
+			const already = allocatedThisMonth[c.id] ?? 0;
 			const give = Math.min(Math.max(0, target - already), remaining);
 			if (give > 0) {
-				allocations.push({ category_id: c.name, amount_cents: give });
+				allocations.push({ category_id: c.id, amount_cents: give });
 				remaining -= give;
 			}
 		}
@@ -135,6 +142,17 @@ export async function POST(context) {
 				409,
 			);
 		}
+		// Toda regla debe apuntar a un UUID de categoría existente del usuario.
+		const orphan = rules.find((r) => !catById.has(r.category_id));
+		if (orphan) {
+			return json(
+				{
+					error: `Una regla apunta a una categoría inexistente (${orphan.category_id}).`,
+				},
+				422,
+			);
+		}
+
 		const badPct = rules.some(
 			(r) =>
 				!Number.isInteger(r.percentage) ||
@@ -178,7 +196,7 @@ export async function POST(context) {
 		);
 	}
 
-	// Fusiona por categoría (una fase y los % pueden tocar la misma).
+	// Fusiona por UUID de categoría (una fase y los % pueden tocar la misma).
 	const merged = {};
 	for (const a of allocations) {
 		merged[a.category_id] = (merged[a.category_id] ?? 0) + a.amount_cents;
@@ -187,8 +205,8 @@ export async function POST(context) {
 	const today = localDateISO();
 	const inserts = Object.entries(merged).map(([category_id, cents]) => ({
 		user_id: user.id,
-		category_id,
-		label: `Ingreso → ${category_id}`,
+		category_id, // UUID -> transactions.category_id (FK a categories.id)
+		label: `Ingreso → ${catById.get(category_id)?.name ?? category_id}`,
 		amount_cents: cents,
 		transaction_type: "ingreso",
 		effective_date: today,

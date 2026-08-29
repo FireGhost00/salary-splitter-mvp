@@ -1,95 +1,110 @@
 import { formatCents } from "../lib/money";
 
-// Colores por macro tipo: Azul / Morado / Verde (literales, para el JIT de Tailwind).
+// Grupos por macro_type. Todo lo que no es 'deuda' ni 'provision' -> 'estandar'.
 const GROUPS = [
-	{ key: "necesidades", label: "Necesidades", color: "bg-blue-500" },
-	{ key: "deseos", label: "Deseos", color: "bg-purple-500" },
-	{ key: "ahorro", label: "Ahorro", color: "bg-emerald-500" },
+	{ key: "deuda", label: "Deudas", color: "bg-rose-500" },
+	{ key: "provision", label: "Provisiones", color: "bg-blue-500" },
+	{ key: "estandar", label: "Estándar", color: "bg-emerald-500" },
 ];
 
+function groupKeyOf(macroType) {
+	if (macroType === "deuda") return "deuda";
+	if (macroType === "provision") return "provision";
+	return "estandar";
+}
+
+/** Suma amount_cents de las transacciones del mes agrupando por category_id. */
+function sumByCategory(transactions) {
+	const totals = {};
+	for (const tx of transactions) {
+		const key = tx.category_id;
+		if (key == null) continue;
+		totals[key] = (totals[key] ?? 0) + Number(tx.amount_cents || 0);
+	}
+	return totals;
+}
+
 /**
- * Panel analítico del dashboard: barra de progreso horizontal + tres tarjetas
- * con el monto acumulado por macro tipo. Solo HTML + Tailwind (sin librerías).
- * Recibe los totales en centavos (CONVENCIONES.md §2); la división entre 100
- * ocurre aquí, vía formatCents.
+ * Panel de categorías dinámicas: barras horizontales de progreso, Modo Oscuro,
+ * agrupadas por macro_type (Deudas -> Provisiones -> Estándar). Sin gráficas
+ * circulares, sin modelo 50/30/20.
  *
  * @param {{
- *   totalNecesidades?: number,
- *   totalDeseos?: number,
- *   totalAhorro?: number,
- *   ingresoMensual?: number,
+ *   categories?: { name: string, macro_type?: string, target_amount?: number }[],
+ *   transactions?: { category_id: string | null, amount_cents: number }[],
  * }} props
  */
-export default function DashboardCharts({
-	totalNecesidades = 0,
-	totalDeseos = 0,
-	totalAhorro = 0,
-	ingresoMensual = 0,
-}) {
-	const income = Number(ingresoMensual) || 0;
+export default function DashboardCharts({ categories = [], transactions = [] }) {
+	const totals = sumByCategory(transactions);
 
-	// Porcentaje gastado sobre el ingreso del mes. Sin ingreso -> 0 (nunca NaN).
-	const toPct = (cents) =>
-		income > 0 ? Math.round((Number(cents || 0) / income) * 100) : 0;
+	const groups = GROUPS.map((g) => {
+		const rows = categories
+			.filter((c) => groupKeyOf(c.macro_type) === g.key)
+			.map((c) => ({
+				name: c.name,
+				amountCents: totals[c.name] ?? 0,
+				targetCents: Number(c.target_amount ?? 0),
+			}));
+		// Para 'estandar' las barras son comparativas (respecto a la mayor del grupo).
+		const maxAbs = Math.max(1, ...rows.map((r) => Math.abs(r.amountCents)));
+		return { ...g, rows, maxAbs };
+	}).filter((g) => g.rows.length > 0);
 
-	const amountByKey = {
-		necesidades: Number(totalNecesidades) || 0,
-		deseos: Number(totalDeseos) || 0,
-		ahorro: Number(totalAhorro) || 0,
-	};
-
-	const rows = GROUPS.map((group) => ({
-		...group,
-		amountCents: amountByKey[group.key],
-		pct: toPct(amountByKey[group.key]),
-	}));
+	if (groups.length === 0) {
+		return (
+			<div className="rounded-xl border border-slate-700 bg-slate-800 p-4 text-center text-sm text-slate-400">
+				Sin categorías. Créalas en Configuración.
+			</div>
+		);
+	}
 
 	return (
-		<div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
-			{income <= 0 && (
-				<p className="mb-3 text-xs text-slate-400">
-					Sin ingresos registrados este mes.
-				</p>
-			)}
+		<div className="space-y-5 rounded-xl border border-slate-700 bg-slate-800 p-4">
+			{groups.map((g) => (
+				<section key={g.key} className="space-y-2">
+					<h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+						{g.label}
+					</h3>
 
-			{/* Barra de progreso horizontal: anchos dinámicos por porcentaje */}
-			<div className="flex h-6 w-full overflow-hidden rounded-full bg-slate-700">
-				{rows.map((row) => (
-					<div
-						key={row.key}
-						className={row.color}
-						style={{ width: `${row.pct}%` }}
-						title={`${row.label}: ${row.pct}%`}
-					/>
-				))}
-			</div>
+					<ul className="space-y-3">
+						{g.rows.map((row) => {
+							const hasTarget =
+								(g.key === "deuda" || g.key === "provision") &&
+								row.targetCents > 0;
+							const filled = Math.max(0, row.amountCents);
+							const pct = hasTarget
+								? Math.min(100, Math.round((filled / row.targetCents) * 100))
+								: Math.round((Math.abs(row.amountCents) / g.maxAbs) * 100);
 
-			{/* Tres tarjetas: monto acumulado por macro tipo */}
-			<div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
-				{rows.map((row) => (
-					<div
-						key={row.key}
-						className="rounded-lg border border-slate-700 bg-slate-900 p-3"
-					>
-						<div className="flex items-center gap-2">
-							<span
-								className={`inline-block h-2 w-2 rounded-full ${row.color}`}
-							/>
-							<span className="text-xs font-medium text-slate-300">
-								{row.label}
-							</span>
-						</div>
-						<p
-							className={`mt-1 font-mono text-base tabular-nums ${
-								row.key === "ahorro" ? "text-emerald-400" : "text-rose-400"
-							}`}
-						>
-							{formatCents(row.amountCents)}
-						</p>
-						<p className="text-xs text-slate-400">{row.pct}% del ingreso</p>
-					</div>
-				))}
-			</div>
+							return (
+								<li key={row.name} className="space-y-1">
+									<div className="flex items-baseline justify-between gap-3 text-sm">
+										<span className="min-w-0 truncate text-slate-100">
+											{row.name}
+										</span>
+										<span className="shrink-0 font-mono text-xs tabular-nums text-slate-100">
+											{formatCents(row.amountCents)}
+											{hasTarget && (
+												<span className="text-slate-400">
+													{" / "}
+													{formatCents(row.targetCents)}
+												</span>
+											)}
+										</span>
+									</div>
+
+									<div className="h-3 w-full overflow-hidden rounded-full bg-slate-700">
+										<div
+											className={`h-3 rounded-full ${g.color}`}
+											style={{ width: `${pct}%` }}
+										/>
+									</div>
+								</li>
+							);
+						})}
+					</ul>
+				</section>
+			))}
 		</div>
 	);
 }

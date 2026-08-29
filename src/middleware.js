@@ -12,6 +12,7 @@ const PROTECTED_PREFIXES = [
 	"/configuracion",
 	"/perfil",
 	"/mes-ideal",
+	"/resumen-anual",
 	"/api/",
 ];
 

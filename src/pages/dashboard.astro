@@ -100,7 +100,7 @@ const saldoDiferido = (deferredRows ?? []).reduce(
 // el <select> del modal de gastos.
 const { data: categoryRows, error: categoriesError } = await supabase
 	.from("categories")
-	.select("name, type, macro_type");
+	.select("name, type, macro_type, target_amount");
 
 if (categoriesError) {
 	console.warn("No se pudo cargar categories:", categoriesError.message);
@@ -118,9 +118,14 @@ const categoryTypeByName = new Map(
 	(categoryRows ?? []).map((row) => [row.name, row.type]),
 );
 
-// --- Módulo analítico 50/30/20 ---------------------------------------------
-// Transacciones del mes en curso. El macro_type se cruza en JS contra
-// categoryRows (name -> macro_type), evitando el embed sobre la FK compuesta.
+// Categorías dinámicas para el panel (nombre, macro_type, target_amount).
+const dashCategories = (categoryRows ?? []).map((row) => ({
+	name: row.name,
+	macro_type: row.macro_type ?? "estandar",
+	target_amount: Number(row.target_amount ?? 0),
+}));
+
+// Transacciones del mes en curso (para el panel de categorías).
 const { data: monthTransactions, error: monthTxError } = await supabase
 	.from("transactions")
 	.select("category_id, amount_cents")
@@ -135,40 +140,7 @@ if (monthTxError) {
 	);
 }
 
-const macroTypeByName = new Map(
-	(categoryRows ?? []).map((row) => [row.name, row.macro_type]),
-);
-
-// Suma de GASTOS (amount_cents < 0) por macro_type. Todo en centavos (§2).
-const { totalNecesidades, totalDeseos, totalAhorro } = (
-	monthTransactions ?? []
-).reduce(
-	(acc, tx) => {
-		const cents = Number(tx.amount_cents ?? 0);
-		if (cents >= 0) return acc; // solo gastos
-		const gasto = Math.abs(cents);
-		switch (macroTypeByName.get(tx.category_id)) {
-			case "Necesidades":
-				acc.totalNecesidades += gasto;
-				break;
-			case "Deseos":
-				acc.totalDeseos += gasto;
-				break;
-			case "Ahorro":
-				acc.totalAhorro += gasto;
-				break;
-		}
-		return acc;
-	},
-	{ totalNecesidades: 0, totalDeseos: 0, totalAhorro: 0 },
-);
-
-// Ingreso del mes = suma de amount_cents > 0 (centavos).
-const ingresoMensual = (monthTransactions ?? []).reduce(
-	(sum, tx) =>
-		Number(tx.amount_cents) > 0 ? sum + Number(tx.amount_cents) : sum,
-	0,
-);
+const monthTx = monthTransactions ?? [];
 
 // Historial de movimientos fragmentados (lista bajo las gráficas).
 // `transactions.category_id` ES el nombre de la categoría (FK compuesta
@@ -269,14 +241,12 @@ const deudas = (debtCats ?? []).map((c) => {
 
 			<section class="space-y-3">
 				<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-slate-400">
-					Regla 50 / 30 / 20
+					Categorías del mes
 				</h2>
 				<DashboardCharts
 					client:load
-					totalNecesidades={totalNecesidades}
-					totalDeseos={totalDeseos}
-					totalAhorro={totalAhorro}
-					ingresoMensual={ingresoMensual}
+					categories={dashCategories}
+					transactions={monthTx}
 				/>
 			</section>
 

@@ -1,0 +1,109 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import AnnualSummary from "../components/AnnualSummary.jsx";
+import { createSupabaseServerClient } from "../lib/supabase.js";
+
+// Ruta on-demand: requiere sesión.
+export const prerender = false;
+
+const supabase = createSupabaseServerClient(Astro);
+
+const {
+	data: { user },
+} = await supabase.auth.getUser();
+
+if (!user) {
+	return Astro.redirect("/login");
+}
+
+const year = new Date().getFullYear();
+const yearStart = `${year}-01-01`;
+const yearEnd = `${year}-12-31`;
+
+// Todas las transacciones del año en curso.
+const { data: txRows, error: txError } = await supabase
+	.from("transactions")
+	.select("category_id, amount_cents")
+	.eq("user_id", user.id)
+	.gte("effective_date", yearStart)
+	.lte("effective_date", yearEnd);
+
+if (txError) {
+	throw new Error(
+		`No se pudieron cargar las transacciones: ${txError.message}`,
+	);
+}
+
+// macro_type por categoría, para clasificar las salidas.
+const { data: catRows, error: catError } = await supabase
+	.from("categories")
+	.select("name, macro_type")
+	.eq("user_id", user.id);
+
+if (catError) {
+	throw new Error(`No se pudieron cargar las categorías: ${catError.message}`);
+}
+
+const macroByName = new Map(
+	(catRows ?? []).map((c) => [c.name, c.macro_type]),
+);
+
+let ingresosTotales = 0;
+let totalDeudasPagadas = 0;
+let totalProvisionado = 0;
+let totalGastos = 0;
+
+for (const tx of txRows ?? []) {
+	const cents = Number(tx.amount_cents ?? 0);
+	if (cents > 0) {
+		ingresosTotales += cents;
+		continue;
+	}
+	const out = Math.abs(cents);
+	switch (macroByName.get(tx.category_id)) {
+		case "deuda":
+			totalDeudasPagadas += out;
+			break;
+		case "provision":
+			totalProvisionado += out;
+			break;
+		default:
+			totalGastos += out;
+	}
+}
+
+// Balance neto = Ingresos − todas las salidas (= suma de todos los amount_cents).
+const balanceNeto =
+	ingresosTotales - totalDeudasPagadas - totalProvisionado - totalGastos;
+---
+
+<BaseLayout title="Resumen Anual · SalarySplitter">
+	<main class="mx-auto w-full max-w-2xl px-4 py-8 sm:px-6 sm:py-12">
+		<header class="mb-8 flex items-center justify-between gap-4">
+			<div class="space-y-1">
+				<h1 class="text-xl font-semibold tracking-tight sm:text-2xl">
+					Resumen {year}
+				</h1>
+				<p class="text-sm text-slate-400">
+					Todo tu año en cuatro números.
+				</p>
+			</div>
+			<a
+				href="/dashboard"
+				class="shrink-0 rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-400 transition-colors hover:text-slate-100"
+			>
+				← Dashboard
+			</a>
+		</header>
+
+		<AnnualSummary
+			client:load
+			year={year}
+			ingresosTotales={ingresosTotales}
+			totalDeudasPagadas={totalDeudasPagadas}
+			totalProvisionado={totalProvisionado}
+			totalGastos={totalGastos}
+			balanceNeto={balanceNeto}
+		/>
+	</main>
+</BaseLayout>
