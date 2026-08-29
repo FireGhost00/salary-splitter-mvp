@@ -74,20 +74,45 @@ const totalBalanceCents = balances.reduce(
 	0,
 );
 
+// Saldo diferido: ingresos con effective_date POSTERIOR al último día del mes
+// mostrado (los que se marcaron "Aplicar al próximo mes"). Es una consulta
+// APARTE y su valor NO entra en totalBalanceCents (no afecta la liquidez actual).
+const pad2 = (n: number) => String(n).padStart(2, "0");
+const lastDayOfMonth = new Date(year, month, 0); // month 1..12 -> día 0 del mes+1
+const monthEndISO = `${lastDayOfMonth.getFullYear()}-${pad2(lastDayOfMonth.getMonth() + 1)}-${pad2(lastDayOfMonth.getDate())}`;
+
+const { data: deferredRows, error: deferredError } = await supabase
+	.from("transactions")
+	.select("amount_cents")
+	.eq("user_id", user.id)
+	.gt("amount_cents", 0)
+	.gt("effective_date", monthEndISO);
+
+if (deferredError) {
+	console.warn("No se pudo calcular saldoDiferido:", deferredError.message);
+}
+
+const saldoDiferido = (deferredRows ?? []).reduce(
+	(total, row) => total + Number(row.amount_cents ?? 0),
+	0,
+);
+
 // categories: PK compuesta (user_id, name); no existe columna id -> `name` es el
-// identificador. `type` se usa para la etiqueta de cada sobre.
+// identificador. `type` para la etiqueta del sobre; `macro_type` para agrupar
+// el <select> del modal de gastos.
 const { data: categoryRows, error: categoriesError } = await supabase
 	.from("categories")
-	.select("name, type");
+	.select("name, type, macro_type");
 
 if (categoriesError) {
 	console.warn("No se pudo cargar categories:", categoriesError.message);
 }
 
-// Lista para el <select> del modal (forma { id, name }).
+// Lista para el <select> del modal (forma { id, name, macro_type }).
 const categories = (categoryRows ?? []).map((row) => ({
 	id: row.name,
 	name: row.name,
+	macro_type: row.macro_type,
 }));
 
 // nombre -> type: la vista monthly_balances no trae el type de la categoría.
@@ -124,6 +149,8 @@ const categoryTypeByName = new Map(
 				<HeroBalance
 					amountInCents={totalBalanceCents}
 					baseSalaryInCents={baseSalaryCents}
+					saldoDiferido={saldoDiferido}
+					userId={user.id}
 				/>
 			</div>
 
@@ -156,7 +183,7 @@ const categoryTypeByName = new Map(
 				<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-neutral-500">
 					Movimientos
 				</h2>
-				<TransactionList supabase={supabase} />
+				<TransactionList supabase={supabase} userId={user.id} />
 			</section>
 		</div>
 

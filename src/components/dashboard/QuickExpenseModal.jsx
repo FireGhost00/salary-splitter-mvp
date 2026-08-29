@@ -1,22 +1,35 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+
+const SIN_CLASIFICAR = "Sin clasificar";
 
 /**
  * Isla interactiva: botón flotante que abre un modal para registrar un gasto
  * rápido. Envía el monto en dólares a POST /api/expense, que lo convierte a
  * centavos negativos e inserta en `transactions`.
  *
- * @param {{ categories: { id: string, name: string }[] }} props
+ * @param {{ categories: { id: string, name: string, macro_type?: string }[] }} props
  */
 export default function QuickExpenseModal({ categories = [] }) {
+	// Arreglo plano -> objeto agrupado por macro_type ('Necesidades', 'Deseos', …).
+	const groupedCategories = useMemo(() => {
+		return categories.reduce((groups, category) => {
+			const key = category.macro_type || SIN_CLASIFICAR;
+			(groups[key] ??= []).push(category);
+			return groups;
+		}, {});
+	}, [categories]);
+
 	const [isOpen, setIsOpen] = useState(false);
 	const [categoryId, setCategoryId] = useState(categories[0]?.id ?? "");
 	const [amountText, setAmountText] = useState("");
+	const [description, setDescription] = useState("");
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [error, setError] = useState(null);
 
 	function close() {
 		setIsOpen(false);
 		setAmountText("");
+		setDescription("");
 		setError(null);
 	}
 
@@ -51,6 +64,8 @@ export default function QuickExpenseModal({ categories = [] }) {
 					amount,
 					category_id: categoryId,
 					label: category?.name ?? categoryId,
+					// Opcional: string vacío si el usuario no escribe nada.
+					description: description.trim(),
 				}),
 			});
 
@@ -115,10 +130,22 @@ export default function QuickExpenseModal({ categories = [] }) {
 									onChange={(event) => setCategoryId(event.target.value)}
 									className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-slate-500 focus:outline-none"
 								>
-									{categories.map((cat) => (
-										<option key={cat.id} value={cat.id}>
-											{cat.name}
-										</option>
+									{Object.entries(groupedCategories).map(([macroType, cats]) => (
+										<optgroup
+											key={macroType}
+											label={macroType}
+											className="bg-slate-950 text-slate-400"
+										>
+											{cats.map((cat) => (
+												<option
+													key={cat.id}
+													value={cat.id}
+													className="bg-slate-950 text-slate-100"
+												>
+													{cat.name}
+												</option>
+											))}
+										</optgroup>
 									))}
 								</select>
 							</label>
@@ -137,6 +164,19 @@ export default function QuickExpenseModal({ categories = [] }) {
 									value={amountText}
 									onChange={(event) => setAmountText(event.target.value)}
 									className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm text-slate-100 focus:border-slate-500 focus:outline-none"
+								/>
+							</label>
+
+							<label className="block space-y-1">
+								<span className="text-xs uppercase tracking-wider text-slate-500">
+									Concepto o Nota (Opcional)
+								</span>
+								<input
+									type="text"
+									value={description}
+									onChange={(event) => setDescription(event.target.value)}
+									placeholder="Ej. Súper del sábado"
+									className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-slate-500 focus:outline-none"
 								/>
 							</label>
 

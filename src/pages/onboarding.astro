@@ -28,16 +28,27 @@ if (Astro.request.method === "POST") {
 		errorMessage = "Introduce un salario base mayor que 0.";
 	} else {
 		// upsert por PK (id): sirve tanto para el alta como para editar luego.
-		const { error } = await supabase.from("profiles").upsert({
+		const { error: profileError } = await supabase.from("profiles").upsert({
 			id: user.id,
 			first_name: firstName,
 			base_salary: baseSalary,
 		});
 
-		if (error) {
-			errorMessage = error.message;
+		if (profileError) {
+			errorMessage = profileError.message;
 		} else {
-			return Astro.redirect("/dashboard");
+			// Seeding vía RPC: la función crea las categorías por defecto solo si el
+			// usuario aún no tiene ninguna (IF NOT EXISTS del lado de Postgres).
+			const { error: seedError } = await supabase.rpc(
+				"crear_categorias_defecto",
+				{ nuevo_usuario_id: user.id },
+			);
+
+			if (seedError) {
+				errorMessage = `Perfil guardado, pero falló el alta de categorías: ${seedError.message}`;
+			} else {
+				return Astro.redirect("/dashboard");
+			}
 		}
 	}
 }

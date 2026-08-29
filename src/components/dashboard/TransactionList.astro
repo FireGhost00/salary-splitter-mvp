@@ -5,9 +5,11 @@ import DeleteTransactionButton from "./DeleteTransactionButton.jsx";
 interface Props {
 	/** Cliente Supabase ligado a la request (creado en el dashboard). */
 	supabase: import("@supabase/supabase-js").SupabaseClient;
+	/** id del usuario autenticado, para filtrar explícitamente (además del RLS). */
+	userId: string;
 }
 
-const { supabase } = Astro.props;
+const { supabase, userId } = Astro.props;
 
 // US-11: filtros vía query string. El formulario GET de más abajo reenvía la
 // página (onchange -> this.form.submit()), así que aquí solo leemos los params.
@@ -27,9 +29,11 @@ const monthEnd = `${lastDay.getFullYear()}-${pad2(lastDay.getMonth() + 1)}-${pad
 
 let query = supabase
 	.from("transactions")
-	.select("id, label, amount_cents, transaction_type, created_at, effective_date", {
-		count: "exact",
-	})
+	.select(
+		"id, label, description, category_id, amount_cents, transaction_type, created_at, effective_date",
+		{ count: "exact" },
+	)
+	.eq("user_id", userId)
 	.gte("effective_date", monthStart)
 	.lte("effective_date", monthEnd);
 
@@ -40,9 +44,9 @@ if (tipo === "ingresos") {
 	query = query.lt("amount_cents", 0);
 }
 
-// US-12: paginación SSR. Lee ?page=N (1 por defecto), 10 items por página, y
+// US-12: paginación SSR. Lee ?page=N (1 por defecto), 15 items por página, y
 // pide a Supabase el rango [from, to] en lugar de un .limit() fijo.
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 15;
 const requestedPage = Number.parseInt(params.get("page") ?? "1", 10);
 const page =
 	Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
@@ -180,7 +184,8 @@ const selectClass =
 							{rows.map((tx) => (
 								<tr>
 									<td class="max-w-[16rem] truncate px-4 py-2.5 text-slate-100">
-										{tx.label}
+										{/* Descripción si existe; si no, el nombre de la categoría. */}
+										{tx.description || tx.category_id || tx.label}
 									</td>
 									<td class="max-w-[8rem] truncate px-4 py-2.5 text-slate-400">
 										{tx.transaction_type}
