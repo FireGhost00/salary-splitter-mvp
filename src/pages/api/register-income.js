@@ -19,6 +19,24 @@ function localDateISO(d = new Date()) {
 }
 
 /**
+ * Reparte `total` (entero) entre `weights` proporcionalmente, con Math.floor y
+ * el residuo a los pesos más grandes (§2). Devuelve enteros que suman `total`.
+ */
+function distribute(total, weights) {
+	const sumW = weights.reduce((a, b) => a + Math.max(0, b), 0);
+	if (total <= 0 || sumW <= 0) return weights.map(() => 0);
+	const out = weights.map((w) => Math.floor((total * Math.max(0, w)) / sumW));
+	let residue = total - out.reduce((a, b) => a + b, 0);
+	const order = weights
+		.map((w, i) => i)
+		.sort((a, b) => weights[b] - weights[a]);
+	for (let k = 0; residue > 0 && order.length > 0; k++, residue--) {
+		out[order[k % order.length]] += 1;
+	}
+	return out;
+}
+
+/**
  * POST /api/register-income
  * Body: { amount_cents: number }  — el ingreso real, en centavos enteros.
  *
@@ -77,25 +95,98 @@ export async function POST(context) {
 
 	const { data: provItems, error: provError } = await supabase
 		.from("provision_items")
-		.select("annual_amount_cents")
+		.select("id, label, annual_amount_cents")
 		.eq("user_id", user.id);
 	if (provError) return json({ error: provError.message }, 500);
 
+	const items = (provItems ?? []).map((it) => ({
+		id: it.id,
+		label: it.label,
+		annual: Math.max(0, Number(it.annual_amount_cents) || 0),
+	}));
+
 	const debtCents =
 		cfg?.debt_enabled === true ? Number(cfg.debt_monthly_cents) || 0 : 0;
-	const provisionCents =
-		cfg?.provisions_enabled === true
-			? monthlyProvisionCents(provItems ?? [])
-			: 0;
+	const provisionsEnabled = cfg?.provisions_enabled === true;
+	const provisionCents = provisionsEnabled
+		? monthlyProvisionCents(provItems ?? [])
+		: 0;
+
+	// --- PASO 3 (turno previo): memoria mensual -----------------------
+	const now = new Date();
+	const p2 = (n) => String(n).padStart(2, "0");
+	const monthStart = `${now.getFullYear()}-${p2(now.getMonth() + 1)}-01`;
+	const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+	const monthEnd = `${lastDay.getFullYear()}-${p2(lastDay.getMonth() + 1)}-${p2(lastDay.getDate())}`;
+
+	// Deuda ya cubierta este mes.
+	const { data: paidDebtRows, error: paidDebtErr } = await supabase
+		.from("transactions")
+		.select("amount_cents")
+		.eq("user_id", user.id)
+		.eq("transaction_type", "ingreso")
+		.eq("category_id", SYS_CAT.deuda)
+		.gte("effective_date", monthStart)
+		.lte("effective_date", monthEnd);
+	if (paidDebtErr) return json({ error: paidDebtErr.message }, 500);
+	const paidDebt = (paidDebtRows ?? []).reduce(
+		(s, r) => s + Math.max(0, Number(r.amount_cents ?? 0)),
+		0,
+	);
+
+	// Provisión ya cubierta este mes, POR RUBRO (provision_item_id).
+	const paidByItem = {};
+	if (items.length > 0) {
+		const { data: paidProvRows, error: paidProvErr } = await supabase
+			.from("transactions")
+			.select("provision_item_id, amount_cents")
+			.eq("user_id", user.id)
+			.eq("transaction_type", "ingreso")
+			.in(
+				"provision_item_id",
+				items.map((i) => i.id),
+			)
+			.gte("effective_date", monthStart)
+			.lte("effective_date", monthEnd);
+		if (paidProvErr) return json({ error: paidProvErr.message }, 500);
+		for (const r of paidProvRows ?? []) {
+			paidByItem[r.provision_item_id] =
+				(paidByItem[r.provision_item_id] ?? 0) +
+				Math.max(0, Number(r.amount_cents ?? 0));
+		}
+	}
+
+	// Meta mensual por rubro (suma exacta = provisionCents) y lo que falta.
+	const itemMonthlyTarget = provisionsEnabled
+		? distribute(
+				provisionCents,
+				items.map((i) => i.annual),
+			)
+		: items.map(() => 0);
+	const itemToCover = items.map((it, i) =>
+		Math.max(0, itemMonthlyTarget[i] - (paidByItem[it.id] ?? 0)),
+	);
+
+	// Solo se descuenta hasta el tope del mes; el resto va a 50/30/20.
+	const debtToCover = Math.max(0, debtCents - paidDebt);
+	const provisionToCover = itemToCover.reduce((a, b) => a + b, 0);
+	const paidProvision = items.reduce(
+		(s, it) => s + (paidByItem[it.id] ?? 0),
+		0,
+	);
+	const alreadyPaidFixed = paidDebt + paidProvision;
 
 	// --- Reparto --------------------------------------------------------
-	const split = splitIncome(amountCents, { debtCents, provisionCents });
+	const split = splitIncome(amountCents, {
+		debtCents: debtToCover,
+		provisionCents: provisionToCover,
+	});
 
 	if (split.deficit) {
 		return json(
 			{
 				error:
-					"Presupuesto en déficit: la Deuda y la Provisión Mensual superan el 50 % de este ingreso.",
+					"Presupuesto en déficit: lo que falta cubrir de Deuda y Provisión este mes supera el 50 % de este ingreso.",
 				deficit: true,
 				detail: {
 					income_cents: split.income_cents,
@@ -103,6 +194,7 @@ export async function POST(context) {
 					debt_cents: split.fixed.debt_cents,
 					provision_cents: split.fixed.provision_cents,
 					fixed_cents: split.fixed.total_cents,
+					already_paid_cents: alreadyPaidFixed,
 					over_cents: split.over_cents,
 				},
 			},
@@ -110,14 +202,14 @@ export async function POST(context) {
 		);
 	}
 
-	// Categorías opcionales necesarias para este ingreso.
-	if (debtCents > 0 && !catNames.has(SYS_CAT.deuda)) {
+	// Categorías opcionales necesarias solo si este ingreso realmente las toca.
+	if (split.fixed.debt_cents > 0 && !catNames.has(SYS_CAT.deuda)) {
 		return json(
 			{ error: `Falta la categoría "${SYS_CAT.deuda}". Guarda la configuración.` },
 			409,
 		);
 	}
-	if (provisionCents > 0 && !catNames.has(SYS_CAT.provision)) {
+	if (split.fixed.provision_cents > 0 && !catNames.has(SYS_CAT.provision)) {
 		return json(
 			{
 				error: `Falta la categoría "${SYS_CAT.provision}". Guarda la configuración.`,
@@ -127,10 +219,11 @@ export async function POST(context) {
 	}
 
 	const today = localDateISO();
-	const mkRow = (name, cents) => ({
+	const mkRow = (name, cents, provisionItemId = null, labelText = null) => ({
 		user_id: user.id,
 		category_id: name, // nombre: monthly_balances / DashboardCharts cruzan por nombre
-		label: `Ingreso → ${name}`,
+		provision_item_id: provisionItemId,
+		label: labelText ?? `Ingreso → ${name}`,
 		amount_cents: cents,
 		transaction_type: "ingreso",
 		effective_date: today,
@@ -141,8 +234,19 @@ export async function POST(context) {
 		rows.push(mkRow(SYS_CAT.necesidad, split.necesidad_free_cents));
 	if (split.fixed.debt_cents > 0)
 		rows.push(mkRow(SYS_CAT.deuda, split.fixed.debt_cents));
-	if (split.fixed.provision_cents > 0)
-		rows.push(mkRow(SYS_CAT.provision, split.fixed.provision_cents));
+
+	// Provisión: se reparte entre rubros según lo que falta por cubrir de cada uno.
+	if (split.fixed.provision_cents > 0) {
+		const itemAlloc = distribute(split.fixed.provision_cents, itemToCover);
+		items.forEach((it, i) => {
+			if (itemAlloc[i] > 0) {
+				rows.push(
+					mkRow(SYS_CAT.provision, itemAlloc[i], it.id, `Ingreso → ${it.label}`),
+				);
+			}
+		});
+	}
+
 	if (split.shares.deseo > 0) rows.push(mkRow(SYS_CAT.deseo, split.shares.deseo));
 	if (split.shares.ahorro > 0)
 		rows.push(mkRow(SYS_CAT.ahorro, split.shares.ahorro));
@@ -170,6 +274,7 @@ export async function POST(context) {
 				provision_cents: split.fixed.provision_cents,
 				deseo_cents: split.shares.deseo,
 				ahorro_cents: split.shares.ahorro,
+				already_paid_fixed_cents: alreadyPaidFixed,
 			},
 		},
 		200,

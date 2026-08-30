@@ -44,7 +44,8 @@ export default function ProvisionsGrowthChart({ data = [] }) {
 		return { points, maxV, baseY, x, y, line, area };
 	}, [data]);
 
-	const hasData = geom.points.some((p) => p.value > 0);
+	// Hay algo que dibujar si cualquier mes tiene saldo acumulado != 0.
+	const hasData = data.some((d) => Number(d.balanceCents) !== 0);
 
 	if (data.length === 0 || !hasData) {
 		return (

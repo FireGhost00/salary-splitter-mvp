@@ -1,63 +1,106 @@
 import { useEffect, useMemo, useState } from "react";
 import { formatCents } from "../lib/money";
 
-/** Orden y etiqueta de los grupos del <select> por macro_type. */
-const MACRO_GROUPS = [
-	{ key: "estandar", label: "Maestras (50/30/20)" },
-	{ key: "deuda", label: "Deudas" },
-	{ key: "provision", label: "Provisiones" },
-];
+/** Masters en orden; cada uno agrupa sus subcategorías en el <select>. */
+const MASTER_NAMES = ["Necesidad", "Deseo", "Ahorro"];
+/** Categorías maestras a las que puede caer el sobregiro. */
+const FALLBACK_NAMES = ["Necesidad", "Deseo"];
 
-/** Agrupa las categorías por macro_type; lo desconocido cae en "Otras". */
-function groupCategories(categories) {
-	const buckets = new Map(MACRO_GROUPS.map((g) => [g.key, []]));
-	const otras = [];
-	for (const c of categories) {
-		const bucket = buckets.get(c.macro_type);
-		if (bucket) bucket.push(c);
-		else otras.push(c);
-	}
-	const groups = MACRO_GROUPS.map((g) => ({
-		label: g.label,
-		items: buckets.get(g.key),
-	})).filter((g) => g.items.length > 0);
-	if (otras.length > 0) groups.push({ label: "Otras", items: otras });
-	return groups;
-}
+const SUB_PREFIX = "sub:";
+const PI_PREFIX = "pi:";
+const isSubValue = (v) => typeof v === "string" && v.startsWith(SUB_PREFIX);
+const isPiValue = (v) => typeof v === "string" && v.startsWith(PI_PREFIX);
 
 /**
- * Modal de Gasto Rápido (Modo Oscuro). Presentacional + envío.
+ * Modal de Gasto Rápido (Modo Oscuro).
  *
- * Se muestra cuando `open` es true y se cierra con `onClose` (botón ✕, click en
- * el fondo o Escape). Las categorías llegan por props (TODAS: maestras + Deudas
- * + Provisiones); el <select> las agrupa por macro_type y usa el `id` como value.
+ * El <select> agrupa por master (Necesidad / Deseo / Ahorro), cada uno con la
+ * opción "general" + sus subcategorías. Un gasto contra una subcategoría
+ * descuenta del sobre master (category_id = master) y guarda el nombre en
+ * `transactions.subcategory`. Deuda y los rubros de Provisión van aparte.
  *
  * @param {{
  *   open: boolean,
  *   onClose: () => void,
- *   categories?: { id: string, name: string, macro_type?: string }[],
+ *   categories?: { id: string, name: string, macro_type?: string, availableCents?: number }[],
+ *   provisionItems?: { id: string, label: string, availableCents?: number }[],
+ *   subcategories?: { name: string, parentMaster: string }[],
  * }} props
  */
-export default function ExpenseModal({ open, onClose, categories = [] }) {
-	const categoryGroups = useMemo(
-		() => groupCategories(categories),
+export default function ExpenseModal({
+	open,
+	onClose,
+	categories = [],
+	provisionItems = [],
+	subcategories = [],
+}) {
+	// Se oculta la categoría agregada "Provisiones": se gasta por rubro.
+	const selectable = useMemo(
+		() => categories.filter((c) => c.name !== "Provisiones"),
 		[categories],
 	);
-	const [categoryId, setCategoryId] = useState("");
-	const selectedCategory = categories.find((c) => c.id === categoryId);
+	const nonMaster = useMemo(
+		() => selectable.filter((c) => !MASTER_NAMES.includes(c.name)),
+		[selectable],
+	);
+
+	const [selection, setSelection] = useState("");
 	const [amountText, setAmountText] = useState("");
 	const [concept, setConcept] = useState("");
+	const [fallbackId, setFallbackId] = useState("");
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [error, setError] = useState(null);
 
-	// Al abrir: preselecciona la primera categoría y limpia errores.
+	const selectedSub = isSubValue(selection)
+		? subcategories.find((s) => s.name === selection.slice(SUB_PREFIX.length))
+		: null;
+	const selectedProvisionItem = isPiValue(selection)
+		? provisionItems.find((p) => p.id === selection.slice(PI_PREFIX.length))
+		: null;
+	const selectedCategory =
+		!selectedSub && !selectedProvisionItem
+			? categories.find((c) => c.id === selection)
+			: null;
+
+	// Categoría real contra la que se descuenta (master si es subcategoría).
+	const primaryName = selectedSub
+		? selectedSub.parentMaster
+		: (selectedProvisionItem ? "Provisiones" : selectedCategory?.name ?? "");
+	const primaryCategory = categories.find((c) => c.name === primaryName);
+
+	const displayName = selectedSub
+		? `${selectedSub.name} · ${selectedSub.parentMaster}`
+		: (selectedProvisionItem?.label ?? selectedCategory?.name ?? "");
+
+	const availableCents = selectedProvisionItem
+		? Number(selectedProvisionItem.availableCents ?? 0)
+		: typeof primaryCategory?.availableCents === "number"
+			? primaryCategory.availableCents
+			: null;
+
+	const parsedAmount = Number.parseFloat(amountText);
+	const amountCents =
+		Number.isFinite(parsedAmount) && parsedAmount > 0
+			? Math.round(parsedAmount * 100)
+			: 0;
+	const isOverdraft =
+		availableCents != null && amountCents > 0 && amountCents > availableCents;
+	const shortfallCents = isOverdraft ? amountCents - availableCents : 0;
+
+	const fallbackOptions = categories.filter(
+		(c) => FALLBACK_NAMES.includes(c.name) && c.name !== primaryName,
+	);
+	const effectiveFallbackId =
+		fallbackId && fallbackOptions.some((o) => o.id === fallbackId)
+			? fallbackId
+			: (fallbackOptions[0]?.id ?? "");
+
 	useEffect(() => {
 		if (!open) return;
-		setCategoryId((prev) => prev || categories[0]?.id || "");
+		setSelection((prev) => prev || selectable[0]?.id || "");
 		setError(null);
-	}, [open, categories]);
+	}, [open, selectable]);
 
-	// Cerrar con Escape.
 	useEffect(() => {
 		if (!open) return;
 		function onKey(event) {
@@ -72,6 +115,7 @@ export default function ExpenseModal({ open, onClose, categories = [] }) {
 	function resetAndClose() {
 		setAmountText("");
 		setConcept("");
+		setFallbackId("");
 		setError(null);
 		onClose();
 	}
@@ -80,20 +124,33 @@ export default function ExpenseModal({ open, onClose, categories = [] }) {
 		event.preventDefault();
 		if (isSubmitting) return;
 
-		const amount = Number.parseFloat(amountText);
-		if (!Number.isFinite(amount) || amount <= 0) {
+		if (amountCents <= 0) {
 			setError("Introduce un monto mayor que 0.");
 			return;
 		}
-		if (!categoryId) {
+		if (!selection) {
 			setError("Elige una categoría.");
 			return;
 		}
+		if (isOverdraft && !effectiveFallbackId) {
+			setError("Elige una categoría de dónde cubrir el faltante.");
+			return;
+		}
 
-		// Patrón Money (CONVENCIONES.md §2): a centavos enteros con Math.round.
-		// El backend lo registra como transaction_type 'gasto' y en negativo.
-		const amountCents = Math.round(amount * 100);
-		const category = categories.find((c) => c.id === categoryId);
+		const body = { amount_cents: amountCents, description: concept.trim() };
+		if (selectedSub) {
+			body.category_id = selectedSub.parentMaster;
+			body.subcategory = selectedSub.name;
+			body.label = selectedSub.name;
+		} else if (selectedProvisionItem) {
+			body.category_id = "Provisiones";
+			body.provision_item_id = selectedProvisionItem.id;
+			body.label = selectedProvisionItem.label;
+		} else {
+			body.category_id = selection;
+			body.label = selectedCategory?.name ?? selection;
+		}
+		if (isOverdraft) body.fallback_category_id = effectiveFallbackId;
 
 		setIsSubmitting(true);
 		setError(null);
@@ -101,21 +158,13 @@ export default function ExpenseModal({ open, onClose, categories = [] }) {
 			const response = await fetch("/api/expense", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					amount_cents: amountCents,
-					category_id: categoryId,
-					label: category?.name ?? categoryId,
-					description: concept.trim(),
-				}),
+				body: JSON.stringify(body),
 			});
-
 			if (response.status === 200) {
 				resetAndClose();
-				// Recarga para que el Dashboard recalcule los saldos.
 				window.location.reload();
 				return;
 			}
-
 			const payload = await response.json().catch(() => ({}));
 			setError(payload.error ?? `Error ${response.status}.`);
 		} catch {
@@ -172,48 +221,124 @@ export default function ExpenseModal({ open, onClose, categories = [] }) {
 							Categoría
 						</span>
 						<select
-							value={categoryId}
-							onChange={(event) => setCategoryId(event.target.value)}
+							value={selection}
+							onChange={(event) => setSelection(event.target.value)}
 							required
 							className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
 						>
-							{categories.length === 0 && (
+							{selectable.length === 0 && provisionItems.length === 0 && (
 								<option value="">Sin categorías</option>
 							)}
-							{categoryGroups.map((group) => (
+
+							{MASTER_NAMES.filter((m) =>
+								selectable.some((c) => c.name === m),
+							).map((master) => (
 								<optgroup
-									key={group.label}
-									label={group.label}
+									key={master}
+									label={master}
 									className="bg-slate-900 text-slate-400"
 								>
-									{group.items.map((category) => (
+									<option
+										value={master}
+										className="bg-slate-900 text-slate-100"
+									>
+										{master} (general)
+									</option>
+									{subcategories
+										.filter((s) => s.parentMaster === master)
+										.map((s) => (
+											<option
+												key={s.name}
+												value={`${SUB_PREFIX}${s.name}`}
+												className="bg-slate-900 text-slate-100"
+											>
+												{s.name}
+											</option>
+										))}
+								</optgroup>
+							))}
+
+							{nonMaster.length > 0 && (
+								<optgroup
+									label="Deudas / otras"
+									className="bg-slate-900 text-slate-400"
+								>
+									{nonMaster.map((c) => (
 										<option
-											key={category.id}
-											value={category.id}
+											key={c.id}
+											value={c.id}
 											className="bg-slate-900 text-slate-100"
 										>
-											{category.name}
+											{c.name}
 										</option>
 									))}
 								</optgroup>
-							))}
+							)}
+
+							{provisionItems.length > 0 && (
+								<optgroup
+									label="Provisiones"
+									className="bg-slate-900 text-slate-400"
+								>
+									{provisionItems.map((item) => (
+										<option
+											key={item.id}
+											value={`${PI_PREFIX}${item.id}`}
+											className="bg-slate-900 text-slate-100"
+										>
+											{item.label}
+										</option>
+									))}
+								</optgroup>
+							)}
 						</select>
-						{selectedCategory &&
-							typeof selectedCategory.availableCents === "number" && (
-								<p className="text-xs text-slate-400">
-									{selectedCategory.name} — Disponible:{" "}
-									<span
-										className={`font-mono ${
-											selectedCategory.availableCents < 0
-												? "text-rose-400"
-												: "text-emerald-400"
-										}`}
-									>
-										{formatCents(selectedCategory.availableCents)}
+						{displayName && availableCents != null && (
+							<p className="text-xs text-slate-400">
+								{displayName} — Disponible:{" "}
+								<span
+									className={`font-mono ${
+										availableCents < 0 ? "text-rose-400" : "text-emerald-400"
+									}`}
+								>
+									{formatCents(availableCents)}
+								</span>
+							</p>
+						)}
+					</label>
+
+					{isOverdraft && (
+						<div className="space-y-2 rounded-lg border border-amber-500/50 bg-amber-950/30 p-3">
+							<p className="text-xs text-amber-300">
+								Este gasto supera el saldo disponible. Faltan{" "}
+								<span className="font-mono">{formatCents(shortfallCents)}</span>.
+							</p>
+							{fallbackOptions.length > 0 ? (
+								<label className="block space-y-1">
+									<span className="text-[11px] uppercase tracking-wider text-amber-400/80">
+										Cubrir el faltante desde
 									</span>
+									<select
+										value={effectiveFallbackId}
+										onChange={(event) => setFallbackId(event.target.value)}
+										className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+									>
+										{fallbackOptions.map((option) => (
+											<option key={option.id} value={option.id}>
+												{option.name}
+												{typeof option.availableCents === "number"
+													? ` — ${formatCents(option.availableCents)}`
+													: ""}
+											</option>
+										))}
+									</select>
+								</label>
+							) : (
+								<p className="text-[11px] text-amber-400/80">
+									No hay categoría maestra disponible para cubrirlo.
 								</p>
 							)}
-					</label>
+						</div>
+					)}
 
 					<label className="block space-y-1">
 						<span className="text-xs uppercase tracking-wider text-slate-400">

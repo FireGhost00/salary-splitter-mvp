@@ -6,17 +6,20 @@ import { formatCents } from "../../lib/money";
  * (ej. 1500.50); el frontend lo pasa a centavos (× 100) y hace POST a
  * /api/register-income, que lo reparte con el modelo 50/30/20.
  *
- * Evaluación de déficit EN VIVO: mientras se escribe el monto se calcula el
- * 50 % (límite de "Necesidad") y se compara contra Deuda mensual + Provisión
- * Mensual (metas anuales / 12). Si lo superan, se muestra un banner crítico
- * encima del botón. El endpoint hace la misma comprobación como red de
- * seguridad (409 `deficit: true`) y en ese caso no registra nada.
+ * Evaluación de déficit EN VIVO: se compara el 50 % del monto ingresado contra
+ * el REMANENTE fijo por cubrir este mes (deuda + provisiones que aún NO se han
+ * pagado con ingresos anteriores). Si ya cubriste tu cuota fija del mes, el
+ * remanente es $0 y no hay alerta. El endpoint hace la misma comprobación como
+ * red de seguridad (409 `deficit: true`).
  *
- * @param {{ debtMonthlyCents?: number, provisionMonthlyCents?: number }} props
+ * @param {{
+ *   pendingFixedCents?: number,       // remanente fijo por cubrir este mes
+ *   alreadyPaidFixedCents?: number,   // fijo ya cubierto este mes
+ * }} props
  */
 export default function IncomeModal({
-	debtMonthlyCents = 0,
-	provisionMonthlyCents = 0,
+	pendingFixedCents = 0,
+	alreadyPaidFixedCents = 0,
 }) {
 	const [isOpen, setIsOpen] = useState(false);
 	const [amountText, setAmountText] = useState("");
@@ -40,35 +43,34 @@ export default function IncomeModal({
 		return () => window.removeEventListener("keydown", onKeyDown);
 	}, [isOpen]);
 
-	// --- PASO 1: evaluación reactiva del déficit -------------------------
+	// --- PASO 2: evaluación reactiva del déficit ------------------------
+	// El déficit se mide contra el REMANENTE fijo por cubrir, no contra la
+	// cuota fija total: (remanenteFijoPorCubrir) > (montoIngresado * 0.50).
 	const evalDeficit = useMemo(() => {
 		const parsed = Number.parseFloat(amountText);
 		const amountCents =
 			Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed * 100) : 0;
 
 		const limiteNecesidad = Math.floor(amountCents / 2); // 50 % del ingreso
-		const deudaMensual = Math.max(0, Math.round(debtMonthlyCents));
-		const provisionMensual = Math.max(0, Math.round(provisionMonthlyCents));
-		const fijos = deudaMensual + provisionMensual;
-		const isDeficit = amountCents > 0 && fijos > limiteNecesidad;
+		const pendiente = Math.max(0, Math.round(pendingFixedCents));
+		const yaCubierto = Math.max(0, Math.round(alreadyPaidFixedCents));
+		const isDeficit = amountCents > 0 && pendiente > limiteNecesidad;
 
 		return {
 			amountCents,
 			limiteNecesidad,
-			deudaMensual,
-			provisionMensual,
-			fijos,
-			faltante: Math.max(0, fijos - limiteNecesidad),
+			pendiente,
+			yaCubierto,
+			faltante: Math.max(0, pendiente - limiteNecesidad),
 			isDeficit,
 		};
-	}, [amountText, debtMonthlyCents, provisionMonthlyCents]);
+	}, [amountText, pendingFixedCents, alreadyPaidFixedCents]);
 
 	// Vista unificada del banner: el detalle del servidor manda si existe.
 	const deficitView = serverDeficit
 		? {
-				fijos: serverDeficit.fixed_cents,
-				deudaMensual: serverDeficit.debt_cents,
-				provisionMensual: serverDeficit.provision_cents,
+				pendiente: serverDeficit.fixed_cents,
+				yaCubierto: serverDeficit.already_paid_cents ?? 0,
 				limiteNecesidad: serverDeficit.necesidad_cents,
 				faltante: serverDeficit.over_cents,
 			}
@@ -204,11 +206,14 @@ export default function IncomeModal({
 												Ahorro para cubrir el déficit de este mes.
 											</p>
 											<p className="text-rose-400/80">
-												Deuda {formatCents(deficitView.deudaMensual)} + Provisión{" "}
-												{formatCents(deficitView.provisionMensual)} ={" "}
-												{formatCents(deficitView.fijos)} &gt; 50 % ={" "}
-												{formatCents(deficitView.limiteNecesidad)}. Déficit:{" "}
-												{formatCents(deficitView.faltante)}.
+												Te falta cubrir{" "}
+												{formatCents(deficitView.pendiente)} de deuda/provisiones
+												este mes
+												{deficitView.yaCubierto > 0
+													? ` (ya cubriste ${formatCents(deficitView.yaCubierto)})`
+													: ""}
+												{" "}&gt; 50 % = {formatCents(deficitView.limiteNecesidad)}.
+												Déficit: {formatCents(deficitView.faltante)}.
 											</p>
 										</div>
 									</div>

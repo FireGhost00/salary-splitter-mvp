@@ -2,7 +2,7 @@
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { createSupabaseServerClient } from "../lib/supabase.js";
 
-// Ruta on-demand: crea/actualiza el perfil del usuario activo.
+// Ruta on-demand: pantalla de bienvenida + siembra de la cuenta.
 export const prerender = false;
 
 const supabase = createSupabaseServerClient(Astro);
@@ -15,92 +15,70 @@ if (!user) {
 	return Astro.redirect("/login");
 }
 
-let errorMessage: string | null = null;
+// Si la cuenta ya está sembrada, no hay nada que hacer aquí.
+const { count } = await supabase
+	.from("categories")
+	.select("name", { count: "exact", head: true })
+	.eq("user_id", user.id);
 
-if (Astro.request.method === "POST") {
-	const form = await Astro.request.formData();
-	const firstName = String(form.get("first_name") ?? "").trim();
-	// base_salary es ahora opcional (referencia, no se usa para calcular saldos).
-	const parsedSalary = Number.parseFloat(String(form.get("base_salary") ?? ""));
-	const baseSalary =
-		Number.isFinite(parsedSalary) && parsedSalary > 0 ? parsedSalary : 0;
-
-	if (!firstName) {
-		errorMessage = "El nombre es obligatorio.";
-	} else {
-		// upsert por PK (id): sirve tanto para el alta como para editar luego.
-		const { error: profileError } = await supabase.from("profiles").upsert({
-			id: user.id,
-			first_name: firstName,
-			base_salary: baseSalary,
-		});
-
-		if (profileError) {
-			errorMessage = profileError.message;
-		} else {
-			// Categorías 100% dinámicas: el usuario las crea en /configuracion.
-			// Ya no se siembran categorías por defecto.
-			return Astro.redirect("/dashboard");
-		}
-	}
+if ((count ?? 0) > 0) {
+	return Astro.redirect("/dashboard");
 }
-
-// Prefill si ya existe un perfil parcial.
-const { data: profile } = await supabase
-	.from("profiles")
-	.select("first_name, base_salary")
-	.eq("id", user.id)
-	.maybeSingle();
 ---
 
-<BaseLayout title="Configura tu perfil · SalarySplitter">
+<BaseLayout title="Bienvenido · SalarySplitter">
 	<main
-		class="mx-auto flex min-h-screen w-full max-w-sm flex-col justify-center px-6 py-16"
+		class="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center px-6 py-16 text-center"
 	>
-		<header class="mb-8 space-y-1">
-			<h1 class="text-xl font-semibold tracking-tight">Casi listo</h1>
-			<p class="text-sm text-slate-400">
-				Necesitamos tu nombre y tu salario base para calcular los sobres.
-			</p>
-		</header>
+		<p class="text-xs font-semibold uppercase tracking-[0.3em] text-indigo-400">
+			SalarySplitter
+		</p>
+		<h1
+			class="mt-4 text-2xl font-semibold tracking-tight text-slate-100 sm:text-3xl"
+		>
+			Bienvenido a tu Presupuesto Base Cero
+		</h1>
+		<p class="mt-4 text-sm leading-relaxed text-slate-400">
+			Vamos a preparar tu cuenta con un diccionario de categorías —Necesidad,
+			Deseo y Ahorro con sus subcategorías— para que empieces a repartir cada
+			ingreso 50 / 30 / 20 desde el primer día.
+		</p>
 
-		<form method="POST" class="space-y-4">
-			<label class="block space-y-1">
-				<span class="text-xs uppercase tracking-wider text-slate-400">Nombre</span>
-				<input
-					type="text"
-					name="first_name"
-					required
-					value={profile?.first_name ?? ""}
-					autocomplete="given-name"
-					class="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-				/>
-			</label>
+		<button
+			id="seed-btn"
+			type="button"
+			class="mt-8 w-full rounded-lg bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+		>
+			Configurar mi cuenta
+		</button>
 
-			<label class="block space-y-1">
-				<span class="text-xs uppercase tracking-wider text-slate-400">
-					Salario base <span class="normal-case text-slate-500">(opcional, solo referencia)</span>
-				</span>
-				<input
-					type="number"
-					name="base_salary"
-					inputmode="decimal"
-					step="0.01"
-					min="0"
-					placeholder="0.00"
-					value={profile?.base_salary ?? ""}
-					class="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-sm text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-				/>
-			</label>
-
-			{errorMessage && <p class="text-xs text-rose-400">{errorMessage}</p>}
-
-			<button
-				type="submit"
-				class="w-full rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-500"
-			>
-				Guardar y continuar
-			</button>
-		</form>
+		<p id="seed-error" class="mt-3 hidden text-xs text-rose-400"></p>
 	</main>
+
+	<script>
+		const btn = document.getElementById("seed-btn");
+		const errEl = document.getElementById("seed-error");
+
+		btn?.addEventListener("click", async () => {
+			btn.disabled = true;
+			btn.textContent = "Configurando…";
+			errEl?.classList.add("hidden");
+
+			try {
+				const res = await fetch("/api/seed-account", { method: "POST" });
+				if (res.ok) {
+					window.location.href = "/dashboard";
+					return;
+				}
+				const payload = await res.json().catch(() => ({}));
+				if (errEl) errEl.textContent = payload.error ?? `Error ${res.status}.`;
+			} catch {
+				if (errEl) errEl.textContent = "No se pudo conectar con el servidor.";
+			}
+
+			errEl?.classList.remove("hidden");
+			btn.disabled = false;
+			btn.textContent = "Configurar mi cuenta";
+		});
+	</script>
 </BaseLayout>

@@ -1,8 +1,11 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
 import AnnualSummary from "../components/AnnualSummary.jsx";
+import IncomeVsExpensesChart from "../components/IncomeVsExpensesChart.jsx";
 import ProvisionsGrowthChart from "../components/ProvisionsGrowthChart.jsx";
+import ProvisionsDetailedTable from "../components/ProvisionsDetailedTable.jsx";
 import { createSupabaseServerClient } from "../lib/supabase.js";
+import { SYS_CAT } from "../lib/budget.js";
 
 // Ruta on-demand: requiere sesión.
 export const prerender = false;
@@ -21,10 +24,11 @@ const year = new Date().getFullYear();
 const yearStart = `${year}-01-01`;
 const yearEnd = `${year}-12-31`;
 
-// Todas las transacciones del año en curso.
+// Todas las transacciones del año en curso (UNA sola consulta: alimenta las
+// tarjetas Y la gráfica, así no divergen).
 const { data: txRows, error: txError } = await supabase
 	.from("transactions")
-	.select("category_id, amount_cents")
+	.select("category_id, amount_cents, effective_date")
 	.eq("user_id", user.id)
 	.gte("effective_date", yearStart)
 	.lte("effective_date", yearEnd);
@@ -35,10 +39,10 @@ if (txError) {
 	);
 }
 
-// macro_type por categoría, para clasificar las salidas.
+// macro_type + id por categoría, para clasificar las salidas.
 const { data: catRows, error: catError } = await supabase
 	.from("categories")
-	.select("name, macro_type")
+	.select("id, name, macro_type")
 	.eq("user_id", user.id);
 
 if (catError) {
@@ -49,45 +53,97 @@ const macroByName = new Map(
 	(catRows ?? []).map((c) => [c.name, c.macro_type]),
 );
 
-// --- PASO 1: curva acumulada de Provisiones (sinking funds) -------------
-// Movimientos del año de categorías 'provision', con fecha, para prorratear
-// por mes y arrastrar el saldo del mes anterior.
-const provisionNames = (catRows ?? [])
-	.filter((c) => c.macro_type === "provision")
-	.map((c) => c.name);
-
-const monthlyProvisionNet = Array(12).fill(0);
-if (provisionNames.length > 0) {
-	const { data: provRows, error: provErr } = await supabase
-		.from("transactions")
-		.select("amount_cents, effective_date")
-		.eq("user_id", user.id)
-		.in("category_id", provisionNames)
-		.gte("effective_date", yearStart)
-		.lte("effective_date", yearEnd);
-
-	if (provErr) {
-		console.warn("No se pudo cargar la curva de provisiones:", provErr.message);
-	}
-	for (const row of provRows ?? []) {
-		// effective_date es 'YYYY-MM-DD'; el mes son los caracteres 6-7.
-		const m = Number(String(row.effective_date).slice(5, 7)) - 1;
-		if (m >= 0 && m < 12) {
-			monthlyProvisionNet[m] += Number(row.amount_cents ?? 0);
+// Un movimiento pertenece a un macro_type si su category_id coincide por NOMBRE,
+// por UUID, o por el nombre canónico del sistema (robusto ante seeds mixtos).
+function macroKeySet(macro, canonicalName) {
+	const set = new Set([canonicalName]);
+	for (const c of catRows ?? []) {
+		if (c.macro_type === macro) {
+			set.add(c.name);
+			if (c.id != null) set.add(String(c.id));
 		}
+		if (c.name === canonicalName && c.id != null) set.add(String(c.id));
 	}
+	return set;
 }
+const provisionKeys = macroKeySet("provision", SYS_CAT.provision);
+const debtKeys = macroKeySet("deuda", SYS_CAT.deuda);
+const isProvisionTx = (cid) => provisionKeys.has(String(cid));
+const isDebtTx = (cid) => debtKeys.has(String(cid));
 
+// --- PASO 3: curva acumulada de Provisiones (sinking funds) ------------
+// Neto mensual (aportes positivos + gastos negativos) de las categorías
+// 'provision', arrastrando el saldo acumulado del mes anterior.
 const MESES_CORTOS = [
 	"Ene", "Feb", "Mar", "Abr", "May", "Jun",
 	"Jul", "Ago", "Sep", "Oct", "Nov", "Dic",
 ];
 
-// Saldo acumulado: cada mes arrastra el total acumulado del mes anterior.
+const monthlyProvisionNet = Array(12).fill(0);
+for (const tx of txRows ?? []) {
+	if (!isProvisionTx(tx.category_id)) continue;
+	// effective_date: 'YYYY-MM-DD' o ISO; los caracteres 6-7 son el mes.
+	const m = Number(String(tx.effective_date).slice(5, 7)) - 1;
+	if (m >= 0 && m < 12) {
+		monthlyProvisionNet[m] += Number(tx.amount_cents ?? 0);
+	}
+}
+
 let provisionRunning = 0;
 const provisionsGrowth = monthlyProvisionNet.map((net, i) => {
 	provisionRunning += net;
 	return { month: MESES_CORTOS[i], balanceCents: provisionRunning };
+});
+
+// --- PASO 1: Ingresos vs Salidas por mes (YTD) ------------------------
+// ingresos = suma de todo lo positivo; salidas = |suma de todo lo negativo|
+// (gastos + pagos de deuda + provisiones, sin distinguir).
+const incomeVsExpenses = MESES_CORTOS.map((month) => ({
+	month,
+	ingresos: 0,
+	salidas: 0,
+}));
+for (const tx of txRows ?? []) {
+	const m = Number(String(tx.effective_date).slice(5, 7)) - 1;
+	if (m < 0 || m > 11) continue;
+	const cents = Number(tx.amount_cents ?? 0);
+	if (cents > 0) incomeVsExpenses[m].ingresos += cents;
+	else incomeVsExpenses[m].salidas += Math.abs(cents);
+}
+
+// --- PASO 2: detalle por rubro de provisión (todo el historial) -------
+const { data: provItemRows } = await supabase
+	.from("provision_items")
+	.select("id, label, annual_amount_cents")
+	.eq("user_id", user.id);
+
+const provItemAgg = new Map(); // id -> { saved, used }
+if ((provItemRows ?? []).length > 0) {
+	const { data: provItemTx } = await supabase
+		.from("transactions")
+		.select("provision_item_id, amount_cents")
+		.eq("user_id", user.id)
+		.not("provision_item_id", "is", null);
+	for (const tx of provItemTx ?? []) {
+		const e = provItemAgg.get(tx.provision_item_id) ?? { saved: 0, used: 0 };
+		const c = Number(tx.amount_cents ?? 0);
+		if (c > 0) e.saved += c;
+		else e.used += Math.abs(c);
+		provItemAgg.set(tx.provision_item_id, e);
+	}
+}
+
+const provisionsDetailed = (provItemRows ?? []).map((it) => {
+	const agg = provItemAgg.get(it.id) ?? { saved: 0, used: 0 };
+	const annual = Number(it.annual_amount_cents ?? 0);
+	return {
+		label: it.label,
+		annualCents: annual,
+		monthlyCents: Math.round(annual / 12),
+		savedCents: agg.saved, // ahorro_provisionado
+		usedCents: agg.used, // cantidad_usada
+		remainingCents: agg.saved - agg.used, // saldo / por usar
+	};
 });
 
 let ingresosTotales = 0;
@@ -102,16 +158,9 @@ for (const tx of txRows ?? []) {
 		continue;
 	}
 	const out = Math.abs(cents);
-	switch (macroByName.get(tx.category_id)) {
-		case "deuda":
-			totalDeudasPagadas += out;
-			break;
-		case "provision":
-			totalProvisionado += out;
-			break;
-		default:
-			totalGastos += out;
-	}
+	if (isDebtTx(tx.category_id)) totalDeudasPagadas += out;
+	else if (isProvisionTx(tx.category_id)) totalProvisionado += out;
+	else totalGastos += out;
 }
 
 // Balance neto = Ingresos − todas las salidas (= suma de todos los amount_cents).
@@ -150,9 +199,23 @@ const balanceNeto =
 
 		<section class="mt-8 space-y-3">
 			<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-slate-400">
+				Ingresos vs. salidas
+			</h2>
+			<IncomeVsExpensesChart client:load data={incomeVsExpenses} />
+		</section>
+
+		<section class="mt-8 space-y-3">
+			<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-slate-400">
 				Crecimiento de provisiones
 			</h2>
 			<ProvisionsGrowthChart client:load data={provisionsGrowth} />
+		</section>
+
+		<section class="mt-8 space-y-3">
+			<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-slate-400">
+				Detalle de provisiones
+			</h2>
+			<ProvisionsDetailedTable client:load data={provisionsDetailed} />
 		</section>
 	</main>
 </BaseLayout>

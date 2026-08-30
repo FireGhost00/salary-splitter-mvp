@@ -10,7 +10,12 @@ import IncomeModal from "../components/dashboard/IncomeModal.jsx";
 import DashboardCharts from "../components/DashboardCharts.jsx";
 import DebtTracker from "../components/DebtTracker.jsx";
 import { createSupabaseServerClient } from "../lib/supabase.js";
-import { monthlyProvisionCents, splitIncome } from "../lib/budget.js";
+import {
+	isSubcategory,
+	monthlyProvisionCents,
+	parentMasterOf,
+	splitIncome,
+} from "../lib/budget.js";
 import { formatCents } from "../lib/money";
 
 // Ruta on-demand: necesita la sesión del usuario en cada request.
@@ -25,6 +30,16 @@ const {
 
 if (!user) {
 	return Astro.redirect("/login");
+}
+
+// PASO 3: cuenta sin sembrar (0 categorías) -> onboarding.
+const { count: categoryCount } = await supabase
+	.from("categories")
+	.select("name", { count: "exact", head: true })
+	.eq("user_id", user.id);
+
+if ((categoryCount ?? 0) === 0) {
+	return Astro.redirect("/onboarding");
 }
 
 // Onboarding obligatorio: basta con que exista la fila de perfil (nombre).
@@ -147,13 +162,25 @@ function availableCentsFor(name: string, macroType: string | null): number {
 		: (monthlyByName.get(name) ?? 0);
 }
 
-// Lista para el <select> del modal: incluye el saldo disponible por categoría.
-const categories = (categoryRows ?? []).map((row) => ({
-	id: row.name,
-	name: row.name,
-	macro_type: row.macro_type,
-	availableCents: availableCentsFor(row.name, row.macro_type),
-}));
+// Subcategorías (Alquiler, Restaurantes, …): NO son opciones planas del modal,
+// se agrupan bajo su master. El gasto contra ellas descuenta del master.
+const subcategoriesForModal = (categoryRows ?? [])
+	.filter((row) => isSubcategory(row))
+	.map((row) => ({
+		name: row.name,
+		parentMaster: parentMasterOf(row.macro_type),
+	}));
+
+// Lista para el <select> del modal: masters + Deuda + Provisiones (sin subcats),
+// con el saldo disponible por categoría.
+const categories = (categoryRows ?? [])
+	.filter((row) => !isSubcategory(row))
+	.map((row) => ({
+		id: row.name,
+		name: row.name,
+		macro_type: row.macro_type,
+		availableCents: availableCentsFor(row.name, row.macro_type),
+	}));
 
 // nombre -> type: la vista monthly_balances no trae el type de la categoría.
 const categoryTypeByName = new Map(
@@ -176,11 +203,13 @@ const envelopes = (categoryRows ?? [])
 	.filter((e) => e.isProvision || e.hasMonthlyRow);
 
 // Categorías dinámicas para el panel (nombre, macro_type, target_amount).
-const dashCategories = (categoryRows ?? []).map((row) => ({
-	name: row.name,
-	macro_type: row.macro_type ?? "estandar",
-	target_amount: Number(row.target_amount ?? 0),
-}));
+const dashCategories = (categoryRows ?? [])
+	.filter((row) => !isSubcategory(row))
+	.map((row) => ({
+		name: row.name,
+		macro_type: row.macro_type ?? "estandar",
+		target_amount: Number(row.target_amount ?? 0),
+	}));
 
 // Transacciones del mes en curso (para el panel de categorías).
 const { data: monthTransactions, error: monthTxError } = await supabase
@@ -209,7 +238,7 @@ const { data: budgetCfg } = await supabase
 
 const { data: provisionRows } = await supabase
 	.from("provision_items")
-	.select("annual_amount_cents")
+	.select("id, label, annual_amount_cents")
 	.eq("user_id", user.id);
 
 const debtMonthlyCents =
@@ -218,6 +247,42 @@ const provisionMonthlyCents =
 	budgetCfg?.provisions_enabled === true
 		? monthlyProvisionCents(provisionRows ?? [])
 		: 0;
+
+// PASO 1 (rubros): saldo disponible acumulado por cada rubro de provisión.
+const provItemIds = (provisionRows ?? []).map((r) => r.id);
+const provItemBalance = {};
+if (provItemIds.length > 0) {
+	const { data: provItemTx } = await supabase
+		.from("transactions")
+		.select("provision_item_id, amount_cents")
+		.eq("user_id", user.id)
+		.in("provision_item_id", provItemIds);
+	for (const row of provItemTx ?? []) {
+		provItemBalance[row.provision_item_id] =
+			(provItemBalance[row.provision_item_id] ?? 0) +
+			Number(row.amount_cents ?? 0);
+	}
+}
+const provisionItemsForModal = (provisionRows ?? []).map((r) => ({
+	id: r.id,
+	label: r.label,
+	availableCents: provItemBalance[r.id] ?? 0,
+}));
+const fixedMonthlyCents = debtMonthlyCents + provisionMonthlyCents;
+
+// PASO 1: lo YA cubierto este mes = ingresos destinados a Deuda / Provisiones.
+// El remanente por cubrir es lo que el modal debe evaluar contra el 50 %.
+const alreadyPaidFixedCents = monthTx.reduce((total, row) => {
+	const goesToFixed =
+		row.category_id === "Deuda" || row.category_id === "Provisiones";
+	return row.transaction_type === "ingreso" && goesToFixed
+		? total + Math.max(0, Number(row.amount_cents ?? 0))
+		: total;
+}, 0);
+const remanenteFijoPorCubrir = Math.max(
+	0,
+	fixedMonthlyCents - alreadyPaidFixedCents,
+);
 
 // Ingreso del mes = suma de las transacciones de tipo 'ingreso' del mes.
 const ingresoTotalMes = monthTx.reduce(
@@ -344,8 +409,8 @@ const deudas = (debtCats ?? []).map((c) => {
 					</h2>
 					<IncomeModal
 						client:load
-						debtMonthlyCents={debtMonthlyCents}
-						provisionMonthlyCents={provisionMonthlyCents}
+						pendingFixedCents={remanenteFijoPorCubrir}
+						alreadyPaidFixedCents={alreadyPaidFixedCents}
 					/>
 				</div>
 				<HeroBalance
@@ -404,7 +469,12 @@ const deudas = (debtCats ?? []).map((c) => {
 			</section>
 		</div>
 
-		<QuickExpenseModal categories={categories} client:load />
+		<QuickExpenseModal
+			categories={categories}
+			provisionItems={provisionItemsForModal}
+			subcategories={subcategoriesForModal}
+			client:load
+		/>
 		</main>
 	</div>
 </BaseLayout>

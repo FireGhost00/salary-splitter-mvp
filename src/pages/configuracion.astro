@@ -1,7 +1,9 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
 import BudgetConfigManager from "../components/BudgetConfigManager.jsx";
+import MyCategories from "../components/MyCategories.jsx";
 import { createSupabaseServerClient } from "../lib/supabase.js";
+import { isSubcategory } from "../lib/budget.js";
 
 // Ruta on-demand: requiere sesión.
 export const prerender = false;
@@ -46,6 +48,15 @@ const provisionItems = (provRows ?? []).map((row) => ({
 	label: row.label,
 	annual_amount_cents: Number(row.annual_amount_cents ?? 0),
 }));
+
+const { data: catRows } = await supabase
+	.from("categories")
+	.select("name, macro_type")
+	.eq("user_id", user.id);
+
+const subcategories = (catRows ?? [])
+	.filter((row) => isSubcategory(row))
+	.map((row) => ({ name: row.name, macro_type: row.macro_type }));
 ---
 
 <BaseLayout title="Configuración · SalarySplitter">
@@ -72,5 +83,12 @@ const provisionItems = (provRows ?? []).map((row) => ({
 			config={budgetConfig}
 			provisionItems={provisionItems}
 		/>
+
+		<section class="mt-10 space-y-3">
+			<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-slate-400">
+				Mis Categorías
+			</h2>
+			<MyCategories client:load categories={subcategories} />
+		</section>
 	</main>
 </BaseLayout>

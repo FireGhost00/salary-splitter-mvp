@@ -8,9 +8,17 @@ import ExpenseModal from "../ExpenseModal.jsx";
  *
  * El botón flota por encima del Navbar inferior (bottom-24 z-50).
  *
- * @param {{ categories?: { id: string, name: string, macro_type?: string }[] }} props
+ * @param {{
+ *   categories?: { id: string, name: string, macro_type?: string }[],
+ *   provisionItems?: { id: string, label: string, availableCents?: number }[],
+ *   subcategories?: { name: string, parentMaster: string }[],
+ * }} props
  */
-export default function QuickExpenseModal({ categories = [] }) {
+export default function QuickExpenseModal({
+	categories = [],
+	provisionItems = [],
+	subcategories = [],
+}) {
 	const [isModalOpen, setIsModalOpen] = useState(false);
 
 	return (
@@ -28,6 +36,8 @@ export default function QuickExpenseModal({ categories = [] }) {
 				open={isModalOpen}
 				onClose={() => setIsModalOpen(false)}
 				categories={categories}
+				provisionItems={provisionItems}
+				subcategories={subcategories}
 			/>
 		</>
 	);

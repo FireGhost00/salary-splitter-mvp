@@ -43,6 +43,46 @@ export const OPTIONAL_CATEGORIES = Object.freeze([
 	{ name: SYS_CAT.provision, macro_type: "provision" },
 ]);
 
+/**
+ * Subcategorías: filas de `categories` cuyo `macro_type` apunta a un master.
+ * El gasto contra una subcategoría descuenta del sobre master (category_id) y
+ * guarda el nombre de la subcategoría en `transactions.subcategory`.
+ */
+export const SUBCATEGORY_MACROS = Object.freeze(["necesidad", "deseo", "ahorro"]);
+
+/** Diccionario base de subcategorías que se siembra en el onboarding. */
+export const BASE_SUBCATEGORIES = Object.freeze([
+	{ name: "Alquiler", macro_type: "necesidad" },
+	{ name: "Educación", macro_type: "necesidad" },
+	{ name: "Supermercado", macro_type: "necesidad" },
+	{ name: "Servicios (Luz/Agua)", macro_type: "necesidad" },
+	{ name: "Restaurantes", macro_type: "deseo" },
+	{ name: "Entretenimiento", macro_type: "deseo" },
+	{ name: "Suscripciones", macro_type: "deseo" },
+	{ name: "Fondo de Emergencia", macro_type: "ahorro" },
+	{ name: "Inversiones", macro_type: "ahorro" },
+]);
+
+const PARENT_MASTER_BY_MACRO = Object.freeze({
+	necesidad: SYS_CAT.necesidad,
+	deseo: SYS_CAT.deseo,
+	ahorro: SYS_CAT.ahorro,
+});
+
+const SYS_NAMES = new Set(Object.values(SYS_CAT));
+
+/** Nombre del master padre para un macro_type de subcategoría, o null. */
+export function parentMasterOf(macroType) {
+	return PARENT_MASTER_BY_MACRO[macroType] ?? null;
+}
+
+/** ¿Esta fila de `categories` es una subcategoría (no una del sistema)? */
+export function isSubcategory(row) {
+	return (
+		parentMasterOf(row?.macro_type) != null && !SYS_NAMES.has(row?.name)
+	);
+}
+
 /** Suma de rubros anuales / 12, en centavos enteros (CONVENCIONES.md §2). */
 export function monthlyProvisionCents(items = []) {
 	const annual = items.reduce(

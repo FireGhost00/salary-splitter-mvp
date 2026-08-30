@@ -116,18 +116,40 @@ export async function POST(context) {
 	);
 	if (upsertError) return json({ error: upsertError.message }, 500);
 
-	// 2. Rubros: reemplazo total.
-	const { error: delError } = await supabase
+	// 2. Rubros: upsert por (user_id, label) para NO perder el id de los rubros
+	// que no cambiaron (las transacciones apuntan a él vía provision_item_id).
+	// Los que ya no están en la lista se borran por id.
+	const { data: existingItems, error: existErr } = await supabase
 		.from("provision_items")
-		.delete()
+		.select("id, label")
 		.eq("user_id", user.id);
-	if (delError) return json({ error: delError.message }, 500);
+	if (existErr) return json({ error: existErr.message }, 500);
+
+	const keepLabels = new Set(
+		provisionsEnabled ? items.map((it) => it.label) : [],
+	);
+	const idsToDelete = (existingItems ?? [])
+		.filter((row) => !keepLabels.has(row.label))
+		.map((row) => row.id);
+
+	if (idsToDelete.length > 0) {
+		const { error: delError } = await supabase
+			.from("provision_items")
+			.delete()
+			.in("id", idsToDelete);
+		if (delError) return json({ error: delError.message }, 500);
+	}
 
 	if (provisionsEnabled && items.length > 0) {
-		const { error: insError } = await supabase
+		const { error: upsertItemsError } = await supabase
 			.from("provision_items")
-			.insert(items.map((it) => ({ ...it, user_id: user.id })));
-		if (insError) return json({ error: insError.message }, 500);
+			.upsert(
+				items.map((it) => ({ ...it, user_id: user.id })),
+				{ onConflict: "user_id,label" },
+			);
+		if (upsertItemsError) {
+			return json({ error: upsertItemsError.message }, 500);
+		}
 	}
 
 	// 3. Categorías del sistema.
