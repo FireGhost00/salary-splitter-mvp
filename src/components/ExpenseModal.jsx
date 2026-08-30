@@ -3,8 +3,6 @@ import { formatCents } from "../lib/money";
 
 /** Masters en orden; cada uno agrupa sus subcategorías en el <select>. */
 const MASTER_NAMES = ["Necesidad", "Deseo", "Ahorro"];
-/** Categorías maestras a las que puede caer el sobregiro. */
-const FALLBACK_NAMES = ["Necesidad", "Deseo"];
 
 const SUB_PREFIX = "sub:";
 const PI_PREFIX = "pi:";
@@ -87,13 +85,41 @@ export default function ExpenseModal({
 		availableCents != null && amountCents > 0 && amountCents > availableCents;
 	const shortfallCents = isOverdraft ? amountCents - availableCents : 0;
 
-	const fallbackOptions = categories.filter(
-		(c) => FALLBACK_NAMES.includes(c.name) && c.name !== primaryName,
-	);
-	const effectiveFallbackId =
-		fallbackId && fallbackOptions.some((o) => o.id === fallbackId)
+	// Respaldo del sobregiro: cualquier sobre (master o rubro de provisión) con
+	// saldo > 0, excepto el sobre del gasto principal.
+	const primaryFallbackKey = selectedProvisionItem
+		? `${PI_PREFIX}${selectedProvisionItem.id}`
+		: primaryName;
+
+	const fallbackOptions = [
+		...categories
+			.filter(
+				(c) =>
+					MASTER_NAMES.includes(c.name) &&
+					typeof c.availableCents === "number" &&
+					c.availableCents > 0 &&
+					c.name !== primaryFallbackKey,
+			)
+			.map((c) => ({
+				value: c.name,
+				label: `${c.name} — ${formatCents(c.availableCents)}`,
+			})),
+		...provisionItems
+			.filter(
+				(it) =>
+					Number(it.availableCents ?? 0) > 0 &&
+					`${PI_PREFIX}${it.id}` !== primaryFallbackKey,
+			)
+			.map((it) => ({
+				value: `${PI_PREFIX}${it.id}`,
+				label: `${it.label} — ${formatCents(Number(it.availableCents ?? 0))}`,
+			})),
+	];
+
+	const effectiveFallback =
+		fallbackId && fallbackOptions.some((o) => o.value === fallbackId)
 			? fallbackId
-			: (fallbackOptions[0]?.id ?? "");
+			: (fallbackOptions[0]?.value ?? "");
 
 	useEffect(() => {
 		if (!open) return;
@@ -132,8 +158,8 @@ export default function ExpenseModal({
 			setError("Elige una categoría.");
 			return;
 		}
-		if (isOverdraft && !effectiveFallbackId) {
-			setError("Elige una categoría de dónde cubrir el faltante.");
+		if (isOverdraft && !effectiveFallback) {
+			setError("Elige un sobre con saldo para cubrir el faltante.");
 			return;
 		}
 
@@ -150,7 +176,15 @@ export default function ExpenseModal({
 			body.category_id = selection;
 			body.label = selectedCategory?.name ?? selection;
 		}
-		if (isOverdraft) body.fallback_category_id = effectiveFallbackId;
+		if (isOverdraft) {
+			if (effectiveFallback.startsWith(PI_PREFIX)) {
+				body.fallback_provision_item_id = effectiveFallback.slice(
+					PI_PREFIX.length,
+				);
+			} else {
+				body.fallback_category_id = effectiveFallback;
+			}
+		}
 
 		setIsSubmitting(true);
 		setError(null);
@@ -318,23 +352,20 @@ export default function ExpenseModal({
 										Cubrir el faltante desde
 									</span>
 									<select
-										value={effectiveFallbackId}
+										value={effectiveFallback}
 										onChange={(event) => setFallbackId(event.target.value)}
 										className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
 									>
 										{fallbackOptions.map((option) => (
-											<option key={option.id} value={option.id}>
-												{option.name}
-												{typeof option.availableCents === "number"
-													? ` — ${formatCents(option.availableCents)}`
-													: ""}
+											<option key={option.value} value={option.value}>
+												{option.label}
 											</option>
 										))}
 									</select>
 								</label>
 							) : (
 								<p className="text-[11px] text-amber-400/80">
-									No hay categoría maestra disponible para cubrirlo.
+									No hay ningún sobre con saldo disponible para cubrirlo.
 								</p>
 							)}
 						</div>

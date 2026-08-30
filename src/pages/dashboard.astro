@@ -388,7 +388,7 @@ const deudas = (debtCats ?? []).map((c) => {
 				<div class="mb-6 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
 					<p class="font-semibold">⚠️ Presupuesto en déficit</p>
 					<p class="mt-1 text-xs">
-						Tus costos fijos ({formatCents(deficitInfo.fixed.total_cents)} —
+						Tus costos fijos ({formatCents(debtMonthlyCents + provisionMonthlyCents)} —
 						deuda {formatCents(debtMonthlyCents)} + provisión{" "}
 						{formatCents(provisionMonthlyCents)}) superan el 50 % del ingreso de
 						este mes ({formatCents(deficitInfo.shares.necesidad)}). Te faltan{" "}

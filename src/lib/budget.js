@@ -95,15 +95,21 @@ export function monthlyProvisionCents(items = []) {
 
 /**
  * Reparte un ingreso (centavos enteros) en el modelo 50/30/20 con Deuda y
- * Provisión Mensual absorbidas dentro de Necesidad.
+ * Provisión Mensual absorbidas dentro del 50 % de Necesidad.
+ *
+ * ABONO PARCIAL: si el 50 % NO alcanza para cubrir todo lo fijo por pagar, ese
+ * 50 % se reparte íntegro entre Deuda y Provisión (proporcional a lo que falta
+ * de cada una), Necesidad libre queda en $0 y NO se bloquea nada. `partial`
+ * indica que este ingreso no terminó de cubrir la cuota fija del mes.
  *
  * @param {number} incomeCents
- * @param {{ debtCents?: number, provisionCents?: number }} fixed
+ * @param {{ debtCents?: number, provisionCents?: number }} fixed  Lo que FALTA por cubrir.
  * @returns {{
- *   deficit: boolean,
+ *   partial: boolean, deficit: boolean,
  *   income_cents: number,
  *   shares: { necesidad: number, deseo: number, ahorro: number },
  *   fixed: { debt_cents: number, provision_cents: number, total_cents: number },
+ *   fixed_target: { debt_cents: number, provision_cents: number, total_cents: number },
  *   necesidad_free_cents: number,
  *   over_cents: number,
  * }}
@@ -117,22 +123,43 @@ export function splitIncome(incomeCents, { debtCents = 0, provisionCents = 0 } =
 	// El residuo del floor se suma a Ahorro para cuadrar exacto con el ingreso.
 	const ahorro = income - necesidad - deseo;
 
-	const debt = Math.max(0, Math.round(Number(debtCents) || 0));
-	const provision = Math.max(0, Math.round(Number(provisionCents) || 0));
-	const fixedTotal = debt + provision;
+	const debtTarget = Math.max(0, Math.round(Number(debtCents) || 0));
+	const provTarget = Math.max(0, Math.round(Number(provisionCents) || 0));
+	const fixedTarget = debtTarget + provTarget;
 
-	const deficit = fixedTotal > necesidad;
+	const partial = fixedTarget > necesidad;
+
+	let debtAlloc;
+	let provAlloc;
+	if (!partial) {
+		debtAlloc = debtTarget;
+		provAlloc = provTarget;
+	} else if (fixedTarget === 0) {
+		debtAlloc = 0;
+		provAlloc = 0;
+	} else {
+		// El 50 % completo se reparte entre lo que falta de cada rubro fijo.
+		debtAlloc = Math.floor((necesidad * debtTarget) / fixedTarget);
+		provAlloc = necesidad - debtAlloc; // el resto a provisión (cuadra exacto)
+	}
+	const fixedAlloc = debtAlloc + provAlloc;
 
 	return {
-		deficit,
+		partial,
+		deficit: partial, // compat
 		income_cents: income,
 		shares: { necesidad, deseo, ahorro },
 		fixed: {
-			debt_cents: debt,
-			provision_cents: provision,
-			total_cents: fixedTotal,
+			debt_cents: debtAlloc,
+			provision_cents: provAlloc,
+			total_cents: fixedAlloc,
 		},
-		necesidad_free_cents: deficit ? 0 : necesidad - fixedTotal,
-		over_cents: deficit ? fixedTotal - necesidad : 0,
+		fixed_target: {
+			debt_cents: debtTarget,
+			provision_cents: provTarget,
+			total_cents: fixedTarget,
+		},
+		necesidad_free_cents: partial ? 0 : necesidad - fixedAlloc,
+		over_cents: partial ? fixedTarget - necesidad : 0,
 	};
 }

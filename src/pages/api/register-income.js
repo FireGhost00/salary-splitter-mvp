@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { createSupabaseServerClient } from "../../lib/supabase.js";
 import { SYS_CAT, monthlyProvisionCents, splitIncome } from "../../lib/budget.js";
 
@@ -41,11 +42,11 @@ function distribute(total, weights) {
  * Body: { amount_cents: number }  — el ingreso real, en centavos enteros.
  *
  * 1. Reparte 50/30/20 (Necesidad / Deseo / Ahorro).
- * 2. Dentro de Necesidad, primero se paga la Deuda y la Provisión Mensual.
- * 3. Si Deuda + Provisión Mensual > 50 % del ingreso => 409 { deficit: true } y
- *    NO se registra nada (el front muestra la alerta).
- * 4. Si no, INSERT masivo: una transacción de ingreso por sobre tocado, todas
- *    sumando exactamente el ingreso.
+ * 2. Dentro del 50 % de Necesidad, primero se abona a la Deuda y la Provisión.
+ * 3. ABONO PARCIAL: si ese 50 % no alcanza para lo que falta del mes, se abona
+ *    íntegro a Deuda/Provisión y Necesidad libre queda en $0. NUNCA se bloquea.
+ * 4. INSERT masivo: una transacción de ingreso por sobre tocado; la respuesta
+ *    incluye `partial` y `split.still_uncovered_cents`.
  */
 export async function POST(context) {
 	let body;
@@ -182,25 +183,9 @@ export async function POST(context) {
 		provisionCents: provisionToCover,
 	});
 
-	if (split.deficit) {
-		return json(
-			{
-				error:
-					"Presupuesto en déficit: lo que falta cubrir de Deuda y Provisión este mes supera el 50 % de este ingreso.",
-				deficit: true,
-				detail: {
-					income_cents: split.income_cents,
-					necesidad_cents: split.shares.necesidad,
-					debt_cents: split.fixed.debt_cents,
-					provision_cents: split.fixed.provision_cents,
-					fixed_cents: split.fixed.total_cents,
-					already_paid_cents: alreadyPaidFixed,
-					over_cents: split.over_cents,
-				},
-			},
-			409,
-		);
-	}
+	// ABONO PARCIAL: si el 50 % no cubre todo lo fijo por pagar, `splitIncome`
+	// ya asignó ese 50 % completo a Deuda/Provisión y dejó Necesidad libre en $0.
+	// El ingreso se registra igual (no se bloquea nada).
 
 	// Categorías opcionales necesarias solo si este ingreso realmente las toca.
 	if (split.fixed.debt_cents > 0 && !catNames.has(SYS_CAT.deuda)) {
@@ -219,10 +204,14 @@ export async function POST(context) {
 	}
 
 	const today = localDateISO();
+	// PASO 2: un único id para TODAS las transacciones de este ingreso, para
+	// poder borrar el bloque de un golpe desde el Historial.
+	const groupId = randomUUID();
 	const mkRow = (name, cents, provisionItemId = null, labelText = null) => ({
 		user_id: user.id,
 		category_id: name, // nombre: monthly_balances / DashboardCharts cruzan por nombre
 		provision_item_id: provisionItemId,
+		group_id: groupId,
 		label: labelText ?? `Ingreso → ${name}`,
 		amount_cents: cents,
 		transaction_type: "ingreso",
@@ -264,8 +253,9 @@ export async function POST(context) {
 	return json(
 		{
 			ok: true,
-			deficit: false,
+			partial: split.partial,
 			count: inserted?.length ?? rows.length,
+			group_id: groupId,
 			split: {
 				income_cents: split.income_cents,
 				necesidad_total_cents: split.shares.necesidad,
@@ -275,6 +265,7 @@ export async function POST(context) {
 				deseo_cents: split.shares.deseo,
 				ahorro_cents: split.shares.ahorro,
 				already_paid_fixed_cents: alreadyPaidFixed,
+				still_uncovered_cents: split.over_cents,
 			},
 		},
 		200,

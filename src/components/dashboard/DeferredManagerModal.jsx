@@ -26,6 +26,7 @@ export default function DeferredManagerModal({ onClose }) {
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState(null);
 	const [deletingId, setDeletingId] = useState(null);
+	const [pendingId, setPendingId] = useState(null); // confirmación inline (diálogo propio)
 	const didDeleteRef = useRef(false);
 
 	function close() {
@@ -68,11 +69,10 @@ export default function DeferredManagerModal({ onClose }) {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
-	async function handleDelete(id) {
+	async function confirmDelete(id) {
 		if (deletingId != null) return;
-		if (!window.confirm("¿Eliminar este ingreso reservado?")) return;
-
 		setDeletingId(id);
+		setError(null);
 		try {
 			const response = await fetch("/api/transaction/delete", {
 				method: "POST",
@@ -83,12 +83,13 @@ export default function DeferredManagerModal({ onClose }) {
 			if (response.status === 200) {
 				didDeleteRef.current = true;
 				setRows((prev) => prev.filter((row) => row.id !== id));
+				setPendingId(null);
 			} else {
 				const payload = await response.json().catch(() => ({}));
-				window.alert(payload.error ?? `Error ${response.status}.`);
+				setError(payload.error ?? `Error ${response.status}.`);
 			}
 		} catch {
-			window.alert("No se pudo conectar con el servidor.");
+			setError("No se pudo conectar con el servidor.");
 		} finally {
 			setDeletingId(null);
 		}
@@ -146,31 +147,51 @@ export default function DeferredManagerModal({ onClose }) {
 									<span className="font-mono text-sm tabular-nums text-emerald-400">
 										{formatCents(row.amount_cents)}
 									</span>
-									<button
-										type="button"
-										onClick={() => handleDelete(row.id)}
-										disabled={deletingId === row.id}
-										aria-label="Eliminar ingreso reservado"
-										className="text-slate-400 transition-colors hover:text-rose-400 disabled:cursor-not-allowed disabled:opacity-50"
-									>
-										<svg
-											xmlns="http://www.w3.org/2000/svg"
-											viewBox="0 0 24 24"
-											fill="none"
-											stroke="currentColor"
-											strokeWidth="1.75"
-											strokeLinecap="round"
-											strokeLinejoin="round"
-											className="h-4 w-4"
-											aria-hidden="true"
+									{pendingId === row.id ? (
+										<span className="flex items-center gap-2 text-xs">
+											<button
+												type="button"
+												onClick={() => confirmDelete(row.id)}
+												disabled={deletingId === row.id}
+												className="rounded bg-rose-600 px-2 py-1 font-semibold text-white transition-colors hover:bg-rose-500 disabled:opacity-60"
+											>
+												{deletingId === row.id ? "…" : "Sí, eliminar"}
+											</button>
+											<button
+												type="button"
+												onClick={() => setPendingId(null)}
+												disabled={deletingId === row.id}
+												className="text-slate-400 hover:text-slate-200"
+											>
+												Cancelar
+											</button>
+										</span>
+									) : (
+										<button
+											type="button"
+											onClick={() => setPendingId(row.id)}
+											aria-label="Eliminar ingreso reservado"
+											className="text-slate-400 transition-colors hover:text-rose-400"
 										>
-											<path d="M3 6h18" />
-											<path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
-											<path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-											<path d="M10 11v6" />
-											<path d="M14 11v6" />
-										</svg>
-									</button>
+											<svg
+												xmlns="http://www.w3.org/2000/svg"
+												viewBox="0 0 24 24"
+												fill="none"
+												stroke="currentColor"
+												strokeWidth="1.75"
+												strokeLinecap="round"
+												strokeLinejoin="round"
+												className="h-4 w-4"
+												aria-hidden="true"
+											>
+												<path d="M3 6h18" />
+												<path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
+												<path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+												<path d="M10 11v6" />
+												<path d="M14 11v6" />
+											</svg>
+										</button>
+									)}
 								</div>
 							</li>
 						))}

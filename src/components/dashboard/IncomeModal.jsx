@@ -6,15 +6,13 @@ import { formatCents } from "../../lib/money";
  * (ej. 1500.50); el frontend lo pasa a centavos (× 100) y hace POST a
  * /api/register-income, que lo reparte con el modelo 50/30/20.
  *
- * Evaluación de déficit EN VIVO: se compara el 50 % del monto ingresado contra
- * el REMANENTE fijo por cubrir este mes (deuda + provisiones que aún NO se han
- * pagado con ingresos anteriores). Si ya cubriste tu cuota fija del mes, el
- * remanente es $0 y no hay alerta. El endpoint hace la misma comprobación como
- * red de seguridad (409 `deficit: true`).
+ * ABONO PARCIAL: un ingreso pequeño es válido. Si el 50 % no alcanza para todo
+ * el remanente fijo del mes, se muestra un aviso INFORMATIVO (no bloquea) y el
+ * backend abona ese 50 % completo a Deuda/Provisión.
  *
  * @param {{
  *   pendingFixedCents?: number,       // remanente fijo por cubrir este mes
- *   alreadyPaidFixedCents?: number,   // fijo ya cubierto este mes
+ *   alreadyPaidFixedCents?: number,   // (compat) fijo ya cubierto este mes
  * }} props
  */
 export default function IncomeModal({
@@ -25,13 +23,11 @@ export default function IncomeModal({
 	const [amountText, setAmountText] = useState("");
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [error, setError] = useState(null);
-	const [serverDeficit, setServerDeficit] = useState(null);
 
 	function close() {
 		setIsOpen(false);
 		setAmountText("");
 		setError(null);
-		setServerDeficit(null);
 	}
 
 	useEffect(() => {
@@ -43,40 +39,23 @@ export default function IncomeModal({
 		return () => window.removeEventListener("keydown", onKeyDown);
 	}, [isOpen]);
 
-	// --- PASO 2: evaluación reactiva del déficit ------------------------
-	// El déficit se mide contra el REMANENTE fijo por cubrir, no contra la
-	// cuota fija total: (remanenteFijoPorCubrir) > (montoIngresado * 0.50).
-	const evalDeficit = useMemo(() => {
+	// Evaluación EN VIVO del abono parcial: si el 50 % del monto ingresado no
+	// alcanza para el remanente fijo por cubrir del mes, este ingreso solo abona
+	// una parte. NO bloquea nada; solo muestra un aviso informativo.
+	const partialInfo = useMemo(() => {
 		const parsed = Number.parseFloat(amountText);
 		const amountCents =
 			Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed * 100) : 0;
 
 		const limiteNecesidad = Math.floor(amountCents / 2); // 50 % del ingreso
 		const pendiente = Math.max(0, Math.round(pendingFixedCents));
-		const yaCubierto = Math.max(0, Math.round(alreadyPaidFixedCents));
-		const isDeficit = amountCents > 0 && pendiente > limiteNecesidad;
+		const isPartial = amountCents > 0 && pendiente > limiteNecesidad;
 
 		return {
-			amountCents,
-			limiteNecesidad,
-			pendiente,
-			yaCubierto,
+			isPartial,
 			faltante: Math.max(0, pendiente - limiteNecesidad),
-			isDeficit,
 		};
-	}, [amountText, pendingFixedCents, alreadyPaidFixedCents]);
-
-	// Vista unificada del banner: el detalle del servidor manda si existe.
-	const deficitView = serverDeficit
-		? {
-				pendiente: serverDeficit.fixed_cents,
-				yaCubierto: serverDeficit.already_paid_cents ?? 0,
-				limiteNecesidad: serverDeficit.necesidad_cents,
-				faltante: serverDeficit.over_cents,
-			}
-		: evalDeficit;
-
-	const showDeficit = evalDeficit.isDeficit || serverDeficit != null;
+	}, [amountText, pendingFixedCents]);
 
 	async function handleSubmit(event) {
 		event.preventDefault();
@@ -93,7 +72,6 @@ export default function IncomeModal({
 
 		setIsSubmitting(true);
 		setError(null);
-		setServerDeficit(null);
 		try {
 			const response = await fetch("/api/register-income", {
 				method: "POST",
@@ -108,12 +86,7 @@ export default function IncomeModal({
 			}
 
 			const payload = await response.json().catch(() => ({}));
-			if (payload.deficit && payload.detail) {
-				// Nada quedó registrado: se muestra el desglose y el modal sigue abierto.
-				setServerDeficit(payload.detail);
-			} else {
-				setError(payload.error ?? `Error ${response.status}.`);
-			}
+			setError(payload.error ?? `Error ${response.status}.`);
 		} catch {
 			setError("No se pudo conectar con el servidor.");
 		} finally {
@@ -180,43 +153,15 @@ export default function IncomeModal({
 								la Provisión Mensual salen del 50 % de Necesidad.
 							</p>
 
-							{/* PASO 2 + 3: banner crítico de déficit */}
-							{showDeficit && (
-								<div className="mb-4 rounded-lg border border-rose-500 bg-rose-950/40 p-4">
-									<div className="flex gap-3 text-rose-400">
-										<svg
-											xmlns="http://www.w3.org/2000/svg"
-											viewBox="0 0 24 24"
-											fill="none"
-											stroke="currentColor"
-											strokeWidth="1.75"
-											strokeLinecap="round"
-											strokeLinejoin="round"
-											className="mt-0.5 h-5 w-5 shrink-0"
-											aria-hidden="true"
-										>
-											<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
-											<line x1="12" y1="9" x2="12" y2="13" />
-											<line x1="12" y1="17" x2="12.01" y2="17" />
-										</svg>
-										<div className="space-y-1 text-xs">
-											<p>
-												⚠️ Atención: Tus deudas y provisiones superan tu 50% para
-												necesidades. Tendrás que ajustar tus gastos de Deseo o
-												Ahorro para cubrir el déficit de este mes.
-											</p>
-											<p className="text-rose-400/80">
-												Te falta cubrir{" "}
-												{formatCents(deficitView.pendiente)} de deuda/provisiones
-												este mes
-												{deficitView.yaCubierto > 0
-													? ` (ya cubriste ${formatCents(deficitView.yaCubierto)})`
-													: ""}
-												{" "}&gt; 50 % = {formatCents(deficitView.limiteNecesidad)}.
-												Déficit: {formatCents(deficitView.faltante)}.
-											</p>
-										</div>
-									</div>
+							{/* Aviso informativo de abono parcial (no bloquea) */}
+							{partialInfo.isPartial && (
+								<div className="rounded-lg border border-amber-500/50 bg-amber-950/30 p-3 text-xs text-amber-200">
+									Este ingreso abonará parcialmente tus deudas y provisiones. Aún
+									te faltarán{" "}
+									<span className="font-mono font-semibold">
+										{formatCents(partialInfo.faltante)}
+									</span>{" "}
+									por cubrir este mes.
 								</div>
 							)}
 

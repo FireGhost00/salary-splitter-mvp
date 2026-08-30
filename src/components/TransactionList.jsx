@@ -57,6 +57,11 @@ export default function TransactionList({ transactions = [] }) {
 	const [rows, setRows] = useState(transactions);
 	const [deletingId, setDeletingId] = useState(null);
 
+	// Modal de confirmación en React (diálogo propio, sin diálogos nativos).
+	const [isModalOpen, setIsModalOpen] = useState(false);
+	const [idToDelete, setIdToDelete] = useState(null);
+	const [modalError, setModalError] = useState(null);
+
 	const dateOf = (tx) => tx.created_at ?? tx.effective_date;
 
 	// Mes en curso como "YYYY-MM" (el dashboard es una vista mensual).
@@ -111,11 +116,19 @@ export default function TransactionList({ transactions = [] }) {
 		safePage * PAGE_SIZE,
 	);
 
-	async function handleDelete(id) {
-		if (deletingId != null) return;
-		if (!window.confirm("¿Estás seguro de eliminar este registro?")) return;
+	// El basurero SOLO abre el modal.
+	function requestDelete(id) {
+		setModalError(null);
+		setIdToDelete(id);
+		setIsModalOpen(true);
+	}
 
+	// El único que llama a la API de borrado.
+	async function confirmDelete() {
+		if (deletingId != null || idToDelete == null) return;
+		const id = idToDelete;
 		setDeletingId(id);
+		setModalError(null);
 		try {
 			const response = await fetch("/api/delete-transaction", {
 				method: "DELETE",
@@ -125,12 +138,14 @@ export default function TransactionList({ transactions = [] }) {
 
 			if (response.ok) {
 				setRows((prev) => prev.filter((tx) => tx.id !== id));
+				setIsModalOpen(false);
+				setIdToDelete(null);
 			} else {
 				const payload = await response.json().catch(() => ({}));
-				window.alert(payload.error ?? `Error ${response.status}.`);
+				setModalError(payload.error ?? `Error ${response.status}.`);
 			}
 		} catch {
-			window.alert("No se pudo conectar con el servidor.");
+			setModalError("No se pudo conectar con el servidor.");
 		} finally {
 			setDeletingId(null);
 		}
@@ -140,6 +155,7 @@ export default function TransactionList({ transactions = [] }) {
 		"rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500";
 
 	return (
+		<>
 		<div className="space-y-3">
 			{/* Filtros encima de la tabla */}
 			<div className="flex flex-wrap gap-2">
@@ -205,7 +221,7 @@ export default function TransactionList({ transactions = [] }) {
 									</span>
 									<button
 										type="button"
-										onClick={() => handleDelete(tx.id)}
+										onClick={() => requestDelete(tx.id)}
 										disabled={deletingId === tx.id}
 										aria-label="Eliminar movimiento"
 										className="text-slate-400 transition-colors hover:text-rose-500 disabled:cursor-not-allowed disabled:opacity-50"
@@ -260,5 +276,37 @@ export default function TransactionList({ transactions = [] }) {
 				</div>
 			)}
 		</div>
+
+		{isModalOpen && (
+			<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+				<div className="mx-4 max-w-sm rounded-xl border border-slate-700 bg-slate-800 p-6">
+					<p className="text-sm font-semibold text-slate-100">
+						¿Eliminar este movimiento?
+					</p>
+					{modalError && (
+						<p className="mt-2 text-xs text-rose-400">{modalError}</p>
+					)}
+					<div className="mt-5 flex justify-end gap-2">
+						<button
+							type="button"
+							onClick={() => setIsModalOpen(false)}
+							disabled={deletingId != null}
+							className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+						>
+							Cancelar
+						</button>
+						<button
+							type="button"
+							onClick={confirmDelete}
+							disabled={deletingId != null}
+							className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-60"
+						>
+							{deletingId != null ? "Eliminando…" : "Sí, eliminar"}
+						</button>
+					</div>
+				</div>
+			</div>
+		)}
+		</>
 	);
 }

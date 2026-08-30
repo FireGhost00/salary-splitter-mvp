@@ -139,9 +139,9 @@ export default function IdealMonth({
 								cubrir el déficit de este mes.
 							</p>
 							<p className="text-rose-400/80">
-								Deuda {formatCents(sim.fixed.debt_cents)} + Provisión{" "}
-								{formatCents(sim.fixed.provision_cents)} ={" "}
-								{formatCents(sim.fixed.total_cents)} &gt; 50 % ={" "}
+								Deuda {formatCents(sim.fixed_target.debt_cents)} + Provisión{" "}
+								{formatCents(sim.fixed_target.provision_cents)} ={" "}
+								{formatCents(sim.fixed_target.total_cents)} &gt; 50 % ={" "}
 								{formatCents(limiteNecesidad)}. Déficit:{" "}
 								{formatCents(sim.over_cents)}.
 							</p>
@@ -173,8 +173,11 @@ export default function IdealMonth({
 				/>
 
 				<div className="space-y-1 border-t border-slate-700 pt-3 text-xs text-slate-400">
-					<SubRow label="Deuda" cents={sim.fixed.debt_cents} />
-					<SubRow label="Provisión mensual" cents={sim.fixed.provision_cents} />
+					<SubRow label="Deuda" cents={sim.fixed_target.debt_cents} />
+					<SubRow
+						label="Provisión mensual"
+						cents={sim.fixed_target.provision_cents}
+					/>
 					<SubRow
 						label="Necesidad libre"
 						cents={sim.necesidad_free_cents}

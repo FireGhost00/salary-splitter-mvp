@@ -35,7 +35,7 @@ export async function GET(context) {
 	const { data: txRows, error: txError } = await supabase
 		.from("transactions")
 		.select(
-			"id, category_id, description, label, amount_cents, transaction_type, created_at, effective_date",
+			"id, group_id, category_id, description, label, amount_cents, transaction_type, created_at, effective_date",
 		)
 		.eq("user_id", user.id)
 		.order("created_at", { ascending: false })
@@ -52,6 +52,7 @@ export async function GET(context) {
 
 	const transactions = (txRows ?? []).map((tx) => ({
 		id: tx.id,
+		group_id: tx.group_id ?? null,
 		category:
 			nameById.get(String(tx.category_id)) ?? tx.category_id ?? "Sin categoría",
 		description: tx.description,

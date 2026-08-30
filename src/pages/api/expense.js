@@ -26,12 +26,15 @@ const MASTER_FALLBACKS = new Set(["Necesidad", "Deseo", "Ahorro"]);
  * Body: {
  *   amount_cents?: number (entero > 0, preferente) | amount?: number (dólares > 0),
  *   category_id: string, label?: string, description?: string,
- *   fallback_category_id?: string   // si el gasto sobregira, de aquí sale el resto
+ *   provision_item_id?: string,          // rubro de provisión del gasto principal
+ *   subcategory?: string,
+ *   fallback_category_id?: string,        // sobre de respaldo (master) para el sobregiro
+ *   fallback_provision_item_id?: string   // ...o un rubro de provisión de respaldo
  * }
  * Registra un gasto en `transactions` con el monto en centavos NEGATIVOS.
- * Si hay `fallback_category_id` y el gasto supera el saldo disponible de
- * `category_id`, la transacción se PARTE: una parte vacía la categoría original
- * y el remanente va contra la categoría maestra de respaldo.
+ * Si el gasto supera el saldo disponible de la categoría/rubro y viene un
+ * respaldo, la transacción se PARTE: una parte vacía el sobre original y el
+ * remanente va contra el sobre de respaldo (master o provisión).
  */
 export async function POST(context) {
 	const { request } = context;
@@ -47,6 +50,11 @@ export async function POST(context) {
 		typeof body?.fallback_category_id === "string"
 			? body.fallback_category_id.trim()
 			: "";
+	const fallbackProvItemId =
+		typeof body?.fallback_provision_item_id === "string" &&
+		body.fallback_provision_item_id.trim()
+			? body.fallback_provision_item_id.trim()
+			: null;
 	// Rubro de provisión concreto (opcional). El gasto se asocia a este id y
 	// category_id sigue siendo "Provisiones" para el sobre agregado.
 	const provItemId =
@@ -127,8 +135,12 @@ export async function POST(context) {
 	};
 
 	// --- Camino simple: sin fallback -> un solo gasto -------------------
-	const wantsSplit =
-		fallbackCategoryId !== "" && fallbackCategoryId !== category_id;
+	// Clave canónica de cada sobre: "pi:<uuid>" para un rubro, si no el nombre.
+	const primaryKey = provItemId ? `pi:${provItemId}` : category_id;
+	const fallbackKey = fallbackProvItemId
+		? `pi:${fallbackProvItemId}`
+		: fallbackCategoryId;
+	const wantsSplit = fallbackKey !== "" && fallbackKey !== primaryKey;
 
 	if (!wantsSplit) {
 		const { data, error } = await supabase
@@ -147,9 +159,24 @@ export async function POST(context) {
 	}
 
 	// --- Camino con sobregiro ------------------------------------------
-	if (!MASTER_FALLBACKS.has(fallbackCategoryId)) {
+	// El respaldo es un rubro de provisión (UUID) o un sobre master.
+	if (fallbackProvItemId) {
+		const { data: fbItem, error: fbErr } = await supabase
+			.from("provision_items")
+			.select("id")
+			.eq("user_id", user.id)
+			.eq("id", fallbackProvItemId)
+			.maybeSingle();
+		if (fbErr) return json({ error: fbErr.message }, 500);
+		if (!fbItem) {
+			return json({ error: "El rubro de provisión de respaldo no existe." }, 422);
+		}
+	} else if (!MASTER_FALLBACKS.has(fallbackCategoryId)) {
 		return json(
-			{ error: "La categoría de respaldo debe ser Necesidad, Deseo o Ahorro." },
+			{
+				error:
+					"El respaldo debe ser Necesidad, Deseo, Ahorro o un rubro de provisión.",
+			},
 			422,
 		);
 	}
@@ -223,7 +250,8 @@ export async function POST(context) {
 	}
 	rows.push({
 		...baseRow,
-		category_id: fallbackCategoryId,
+		category_id: fallbackProvItemId ? "Provisiones" : fallbackCategoryId,
+		provision_item_id: fallbackProvItemId,
 		label: `${finalLabel} (sobregiro)`,
 		amount_cents: -remainderCents,
 	});
@@ -240,7 +268,10 @@ export async function POST(context) {
 			split: {
 				from_category_cents: availableCents,
 				from_fallback_cents: remainderCents,
-				fallback_category_id: fallbackCategoryId,
+				fallback_category_id: fallbackProvItemId
+					? "Provisiones"
+					: fallbackCategoryId,
+				fallback_provision_item_id: fallbackProvItemId,
 			},
 		},
 		200,
