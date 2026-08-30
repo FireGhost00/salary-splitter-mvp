@@ -273,3 +273,6 @@ Todo cambio debe respetarlas; ese archivo no se modifica ni se elimina.
 ## 📄 Licencia
 
 Proyecto personal en fase **MVP**. Todos los derechos reservados.
+
+<!-- build: refresh vercel cache -->
+
