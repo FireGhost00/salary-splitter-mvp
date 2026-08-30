@@ -8,7 +8,7 @@ interface Props {
 
 const { title = "SalarySplitter" } = Astro.props;
 
-// La barra inferior no aplica en las pantallas de acceso / alta.
+// La barra de navegación no aplica en las pantallas de acceso / alta.
 const HIDE_NAV_ON = ["/login", "/onboarding"];
 const showNav = !HIDE_NAV_ON.includes(Astro.url.pathname);
 ---
@@ -24,15 +24,7 @@ const showNav = !HIDE_NAV_ON.includes(Astro.url.pathname);
 		<title>{title}</title>
 	</head>
 	<body class="min-h-screen bg-slate-900 text-slate-100 antialiased">
-		{
-			showNav ? (
-				<div class="pb-20">
-					<slot />
-				</div>
-			) : (
-				<slot />
-			)
-		}
 		{showNav && <Navbar />}
+		<slot />
 	</body>
 </html>

@@ -77,6 +77,52 @@ function TrashIcon() {
 	);
 }
 
+/**
+ * PASO 1: agrupación estricta. Los movimientos de tipo 'ingreso' que comparten
+ * `group_id` (o, para datos viejos, el mismo `created_at`) se colapsan en UN
+ * solo objeto con el total sumado. Los gastos quedan tal cual. Usa un Map para
+ * no depender de que las filas estén contiguas; conserva el orden.
+ */
+function processRows(transactions) {
+	const out = [];
+	const groupIndex = new Map();
+
+	for (const tx of transactions) {
+		const isIncome = tx.transaction_type === "ingreso";
+		const key = isIncome
+			? tx.group_id
+				? `g:${tx.group_id}`
+				: tx.created_at
+					? `c:${tx.created_at}`
+					: null
+			: null;
+
+		if (key == null) {
+			out.push({ kind: "tx", tx });
+			continue;
+		}
+
+		if (groupIndex.has(key)) {
+			const g = out[groupIndex.get(key)];
+			g.totalCents += Number(tx.amount_cents) || 0;
+			g.count += 1;
+		} else {
+			groupIndex.set(key, out.length);
+			out.push({
+				kind: "group",
+				key,
+				ref: tx.group_id
+					? { type: "group", groupId: tx.group_id }
+					: { type: "created_at", createdAt: tx.created_at },
+				createdAt: tx.created_at,
+				totalCents: Number(tx.amount_cents) || 0,
+				count: 1,
+			});
+		}
+	}
+	return out;
+}
+
 function Row({ tx, onDelete }) {
 	const positive = isPositive(tx);
 	const title = tx.description || tx.label || tx.category || "Movimiento";
@@ -101,6 +147,34 @@ function Row({ tx, onDelete }) {
 					type="button"
 					onClick={onDelete}
 					aria-label="Eliminar movimiento"
+					className="text-slate-400 transition-colors hover:text-rose-500"
+				>
+					<TrashIcon />
+				</button>
+			</div>
+		</li>
+	);
+}
+
+/** PASO 2: una sola fila maestra por ingreso agrupado. */
+function GroupRow({ group, onDelete }) {
+	return (
+		<li className="flex items-center justify-between gap-3 px-4 py-3">
+			<div className="min-w-0">
+				<p className="truncate text-sm text-slate-100">Ingreso Registrado</p>
+				<p className="truncate text-xs text-slate-400">
+					{group.createdAt ? timeLabel(group.createdAt) : ""}
+					{group.count > 1 ? ` · ${group.count} movimientos` : ""}
+				</p>
+			</div>
+			<div className="flex shrink-0 items-center gap-3">
+				<span className="font-mono text-sm font-semibold tabular-nums text-emerald-400">
+					{formatCents(group.totalCents)}
+				</span>
+				<button
+					type="button"
+					onClick={onDelete}
+					aria-label="Eliminar ingreso registrado"
 					className="text-slate-400 transition-colors hover:text-rose-500"
 				>
 					<TrashIcon />
@@ -210,13 +284,15 @@ export default function TransactionHistory({ transactions = [] }) {
 		);
 	}
 
-	// Agrupación SOLO visual por día; cada transacción sigue siendo una fila.
+	// PASO 1: colapsa los ingresos agrupados; luego agrupa visualmente por día.
+	const items = processRows(rows);
 	const byDay = [];
-	for (const tx of rows) {
-		const day = dayLabel(tx.created_at);
+	for (const item of items) {
+		const iso = item.kind === "group" ? item.createdAt : item.tx.created_at;
+		const day = dayLabel(iso);
 		const last = byDay[byDay.length - 1];
-		if (last && last.day === day) last.txs.push(tx);
-		else byDay.push({ day, txs: [tx] });
+		if (last && last.day === day) last.items.push(item);
+		else byDay.push({ day, items: [item] });
 	}
 
 	return (
@@ -224,22 +300,33 @@ export default function TransactionHistory({ transactions = [] }) {
 			<div className="space-y-4">
 				<div className={`space-y-4 ${loading ? "opacity-60" : ""}`}>
 					{byDay.map((bucket) => (
-						<div key={`${bucket.day}-${bucket.txs[0].id}`} className="space-y-2">
+						<div key={bucket.day} className="space-y-2">
 							<p className="px-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
 								{bucket.day}
 							</p>
 							<ul className="divide-y divide-slate-700/60 overflow-hidden rounded-xl border border-slate-700 bg-slate-800">
-								{bucket.txs.map((tx) => (
-									<Row
-										key={tx.id}
-										tx={tx}
-										onDelete={() =>
-											requestDelete(
-												groupRefOf(tx) ?? { type: "single", id: tx.id },
-											)
-										}
-									/>
-								))}
+								{bucket.items.map((item) =>
+									item.kind === "group" ? (
+										<GroupRow
+											key={item.key}
+											group={item}
+											onDelete={() => requestDelete(item.ref)}
+										/>
+									) : (
+										<Row
+											key={item.tx.id}
+											tx={item.tx}
+											onDelete={() =>
+												requestDelete(
+													groupRefOf(item.tx) ?? {
+														type: "single",
+														id: item.tx.id,
+													},
+												)
+											}
+										/>
+									),
+								)}
 							</ul>
 						</div>
 					))}
