@@ -1,5 +1,5 @@
 ---
-// La raíz no tiene UI propia: el dashboard es la pantalla principal (US-05).
+// La raíz no tiene UI: siempre redirige al inicio de sesión.
 export const prerender = false;
-return Astro.redirect("/dashboard");
+return Astro.redirect("/login");
 ---
