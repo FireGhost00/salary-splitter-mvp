@@ -1,5 +1,6 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
+import AccountForm from "../components/AccountForm.jsx";
 import ProfileForm from "../components/ProfileForm.jsx";
 import { createSupabaseServerClient } from "../lib/supabase.js";
 
@@ -21,6 +22,22 @@ const { data: profile } = await supabase
 	.select("first_name, base_salary")
 	.eq("id", user.id)
 	.maybeSingle();
+
+// ¿El usuario puede cambiar su contraseña? Solo si tiene identidad de correo
+// (los que entraron con Google no usan contraseña).
+const providers =
+	user.app_metadata?.providers ??
+	(user.app_metadata?.provider ? [user.app_metadata.provider] : []);
+const canChangePassword =
+	providers.includes("email") ||
+	(user.identities ?? []).some((i) => i.provider === "email");
+
+// Nombre para mostrar: metadatos de Auth y, si no, el de `profiles`.
+const displayName =
+	user.user_metadata?.display_name ??
+	user.user_metadata?.full_name ??
+	profile?.first_name ??
+	"";
 ---
 
 <BaseLayout title="Perfil · SalarySplitter">
@@ -38,6 +55,22 @@ const { data: profile } = await supabase
 			</a>
 		</header>
 
-		<ProfileForm client:load profile={profile ?? {}} />
+		<div class="space-y-8">
+			<AccountForm
+				client:load
+				email={user.email}
+				displayName={displayName}
+				canChangePassword={canChangePassword}
+			/>
+
+			<section class="space-y-3">
+				<h2
+					class="text-xs font-medium uppercase tracking-[0.25em] text-slate-400"
+				>
+					Presupuesto
+				</h2>
+				<ProfileForm client:load profile={profile ?? {}} />
+			</section>
+		</div>
 	</main>
 </BaseLayout>

@@ -4,12 +4,12 @@ const inputClass =
 	"w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500";
 
 /**
- * Editor del perfil (nombre + salario base). POST a /api/update-profile.
+ * Editor del salario base de referencia. POST parcial a /api/update-profile.
+ * (El nombre para mostrar se gestiona en AccountForm, vía Supabase Auth.)
  *
- * @param {{ profile?: { first_name?: string | null, base_salary?: number | string | null } }} props
+ * @param {{ profile?: { base_salary?: number | string | null } }} props
  */
 export default function ProfileForm({ profile = {} }) {
-	const [firstName, setFirstName] = useState(profile.first_name ?? "");
 	const [baseSalary, setBaseSalary] = useState(
 		profile.base_salary != null ? String(profile.base_salary) : "",
 	);
@@ -20,13 +20,7 @@ export default function ProfileForm({ profile = {} }) {
 		event.preventDefault();
 		if (isSubmitting) return;
 
-		const name = firstName.trim();
 		const salary = Number.parseFloat(baseSalary);
-
-		if (!name) {
-			setFeedback({ type: "error", text: "El nombre es obligatorio." });
-			return;
-		}
 		if (!Number.isFinite(salary) || salary <= 0) {
 			setFeedback({ type: "error", text: "Introduce un salario base mayor que 0." });
 			return;
@@ -34,8 +28,7 @@ export default function ProfileForm({ profile = {} }) {
 
 		// Multiplicamos por 100 antes de enviar. El endpoint vuelve a dividir entre
 		// 100 al persistir, porque `profiles.base_salary` se maneja en DÓLARES en
-		// el resto de la app (onboarding, dashboard, /api/split-salary). Efecto
-		// neto: el salario queda cuantizado a centavos.
+		// el resto de la app. Efecto neto: el salario queda cuantizado a centavos.
 		const baseSalaryCents = Math.round(salary * 100);
 
 		setIsSubmitting(true);
@@ -44,12 +37,12 @@ export default function ProfileForm({ profile = {} }) {
 			const response = await fetch("/api/update-profile", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ first_name: name, base_salary: baseSalaryCents }),
+				body: JSON.stringify({ base_salary: baseSalaryCents }),
 			});
 			const payload = await response.json().catch(() => ({}));
 
 			if (response.ok) {
-				setFeedback({ type: "ok", text: "Perfil actualizado." });
+				setFeedback({ type: "ok", text: "Salario actualizado." });
 			} else {
 				setFeedback({
 					type: "error",
@@ -71,20 +64,6 @@ export default function ProfileForm({ profile = {} }) {
 			onSubmit={handleSubmit}
 			className="space-y-4 rounded-xl border border-slate-700 bg-slate-800 p-5"
 		>
-			<label className="block space-y-1">
-				<span className="text-xs uppercase tracking-wider text-slate-400">
-					Nombre
-				</span>
-				<input
-					type="text"
-					value={firstName}
-					onChange={(event) => setFirstName(event.target.value)}
-					required
-					autoComplete="given-name"
-					className={inputClass}
-				/>
-			</label>
-
 			<label className="block space-y-1">
 				<span className="text-xs uppercase tracking-wider text-slate-400">
 					Salario base
@@ -117,7 +96,7 @@ export default function ProfileForm({ profile = {} }) {
 				disabled={isSubmitting}
 				className="w-full rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
 			>
-				{isSubmitting ? "Guardando…" : "Guardar perfil"}
+				{isSubmitting ? "Guardando…" : "Guardar salario"}
 			</button>
 		</form>
 	);
