@@ -19,6 +19,8 @@ function localDateISO(d = new Date()) {
 	return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 /**
  * Reparte `total` (entero) entre `weights` proporcionalmente, con Math.floor y
  * el residuo a los pesos más grandes (§2). Devuelve enteros que suman `total`.
@@ -60,6 +62,17 @@ export async function POST(context) {
 	if (!Number.isInteger(amountCents) || amountCents <= 0) {
 		return json({ error: "`amount_cents` debe ser un entero mayor que 0." }, 400);
 	}
+
+	// Fecha del ingreso elegida por el usuario (YYYY-MM-DD). Si no viene, hoy.
+	// Determina el mes cuyo remanente fijo (deuda/provisión) se evalúa y la
+	// fecha con la que se guardan TODAS las filas de este ingreso.
+	if (body?.effective_date != null && !DATE_RE.test(String(body.effective_date))) {
+		return json(
+			{ error: "`effective_date` debe tener formato YYYY-MM-DD." },
+			400,
+		);
+	}
+	const effectiveDate = body?.effective_date ?? localDateISO();
 
 	const supabase = createSupabaseServerClient(context);
 	const {
@@ -114,10 +127,12 @@ export async function POST(context) {
 		: 0;
 
 	// --- PASO 3 (turno previo): memoria mensual -----------------------
-	const now = new Date();
+	// El mes se toma de la fecha efectiva elegida, no del reloj: un ingreso
+	// retroactivo se contabiliza contra el remanente fijo de SU mes.
 	const p2 = (n) => String(n).padStart(2, "0");
-	const monthStart = `${now.getFullYear()}-${p2(now.getMonth() + 1)}-01`;
-	const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+	const [effYear, effMonth] = effectiveDate.split("-").map(Number);
+	const monthStart = `${effYear}-${p2(effMonth)}-01`;
+	const lastDay = new Date(effYear, effMonth, 0);
 	const monthEnd = `${lastDay.getFullYear()}-${p2(lastDay.getMonth() + 1)}-${p2(lastDay.getDate())}`;
 
 	// Deuda ya cubierta este mes.
@@ -203,7 +218,7 @@ export async function POST(context) {
 		);
 	}
 
-	const today = localDateISO();
+	const today = effectiveDate;
 	// PASO 2: un único id para TODAS las transacciones de este ingreso, para
 	// poder borrar el bloque de un golpe desde el Historial.
 	const groupId = randomUUID();

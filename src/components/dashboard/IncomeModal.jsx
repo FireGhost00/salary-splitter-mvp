@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { formatCents } from "../../lib/money";
 
+/** Fecha local de hoy como YYYY-MM-DD (valor por defecto del selector). */
+function todayISO() {
+	const d = new Date();
+	const p = (n) => String(n).padStart(2, "0");
+	return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 /**
  * Isla interactiva: botón "+ Ingreso" + modal. El usuario mete el monto real
  * (ej. 1500.50); el frontend lo pasa a centavos (× 100) y hace POST a
@@ -21,12 +28,14 @@ export default function IncomeModal({
 }) {
 	const [isOpen, setIsOpen] = useState(false);
 	const [amountText, setAmountText] = useState("");
+	const [effectiveDate, setEffectiveDate] = useState(todayISO());
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [error, setError] = useState(null);
 
 	function close() {
 		setIsOpen(false);
 		setAmountText("");
+		setEffectiveDate(todayISO());
 		setError(null);
 	}
 
@@ -66,6 +75,10 @@ export default function IncomeModal({
 			setError("Introduce un monto mayor que 0.");
 			return;
 		}
+		if (!/^\d{4}-\d{2}-\d{2}$/.test(effectiveDate)) {
+			setError("Selecciona una fecha válida.");
+			return;
+		}
 
 		// Dólares -> centavos enteros (§2) antes de enviar.
 		const amountCents = Math.round(amount * 100);
@@ -76,7 +89,10 @@ export default function IncomeModal({
 			const response = await fetch("/api/register-income", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ amount_cents: amountCents }),
+				body: JSON.stringify({
+					amount_cents: amountCents,
+					effective_date: effectiveDate,
+				}),
 			});
 
 			if (response.ok) {
@@ -145,6 +161,19 @@ export default function IncomeModal({
 									value={amountText}
 									onChange={(event) => setAmountText(event.target.value)}
 									className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-sm text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+								/>
+							</label>
+
+							<label className="block space-y-1">
+								<span className="text-xs uppercase tracking-wider text-slate-400">
+									Fecha
+								</span>
+								<input
+									type="date"
+									required
+									value={effectiveDate}
+									onChange={(event) => setEffectiveDate(event.target.value)}
+									className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
 								/>
 							</label>
 

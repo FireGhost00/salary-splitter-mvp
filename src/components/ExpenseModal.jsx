@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { formatCents } from "../lib/money";
 
+/** Fecha local de hoy como YYYY-MM-DD (valor por defecto del selector). */
+function todayISO() {
+	const d = new Date();
+	const p = (n) => String(n).padStart(2, "0");
+	return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 /** Masters en orden; cada uno agrupa sus subcategorías en el <select>. */
 const MASTER_NAMES = ["Necesidad", "Deseo", "Ahorro"];
 
@@ -45,6 +52,7 @@ export default function ExpenseModal({
 	const [selection, setSelection] = useState("");
 	const [amountText, setAmountText] = useState("");
 	const [concept, setConcept] = useState("");
+	const [effectiveDate, setEffectiveDate] = useState(todayISO());
 	const [fallbackId, setFallbackId] = useState("");
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [error, setError] = useState(null);
@@ -141,6 +149,7 @@ export default function ExpenseModal({
 	function resetAndClose() {
 		setAmountText("");
 		setConcept("");
+		setEffectiveDate(todayISO());
 		setFallbackId("");
 		setError(null);
 		onClose();
@@ -158,12 +167,20 @@ export default function ExpenseModal({
 			setError("Elige una categoría.");
 			return;
 		}
+		if (!/^\d{4}-\d{2}-\d{2}$/.test(effectiveDate)) {
+			setError("Selecciona una fecha válida.");
+			return;
+		}
 		if (isOverdraft && !effectiveFallback) {
 			setError("Elige un sobre con saldo para cubrir el faltante.");
 			return;
 		}
 
-		const body = { amount_cents: amountCents, description: concept.trim() };
+		const body = {
+			amount_cents: amountCents,
+			description: concept.trim(),
+			effective_date: effectiveDate,
+		};
 		if (selectedSub) {
 			body.category_id = selectedSub.parentMaster;
 			body.subcategory = selectedSub.name;
@@ -247,6 +264,19 @@ export default function ExpenseModal({
 							value={amountText}
 							onChange={(event) => setAmountText(event.target.value)}
 							className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-sm text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+						/>
+					</label>
+
+					<label className="block space-y-1">
+						<span className="text-xs uppercase tracking-wider text-slate-400">
+							Fecha
+						</span>
+						<input
+							type="date"
+							required
+							value={effectiveDate}
+							onChange={(event) => setEffectiveDate(event.target.value)}
+							className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
 						/>
 					</label>
 

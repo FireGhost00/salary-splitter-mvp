@@ -21,6 +21,8 @@ function localDateISO(d = new Date()) {
 /** Categorías maestras a las que puede caer un sobregiro. */
 const MASTER_FALLBACKS = new Set(["Necesidad", "Deseo", "Ahorro"]);
 
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 /**
  * POST /api/expense
  * Body: {
@@ -46,6 +48,17 @@ export async function POST(context) {
 	}
 
 	const { amount, amount_cents, category_id, label, description } = body ?? {};
+
+	// Fecha del movimiento elegida por el usuario (YYYY-MM-DD). Si no viene, se
+	// usa hoy. Es la fecha contra la que se calcula el saldo disponible del mes
+	// y de la que dependen los informes.
+	if (body?.effective_date != null && !DATE_RE.test(String(body.effective_date))) {
+		return json(
+			{ error: "`effective_date` debe tener formato YYYY-MM-DD." },
+			400,
+		);
+	}
+	const effectiveDate = body?.effective_date ?? localDateISO();
 	const fallbackCategoryId =
 		typeof body?.fallback_category_id === "string"
 			? body.fallback_category_id.trim()
@@ -126,7 +139,9 @@ export async function POST(context) {
 		}
 	}
 
-	const today = localDateISO();
+	// Fecha efectiva del gasto: define el mes contra el que se mide el saldo
+	// disponible (más abajo) y la fecha que se guarda en la fila.
+	const today = effectiveDate;
 	const baseRow = {
 		label: finalLabel,
 		description: finalDescription,
