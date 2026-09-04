@@ -216,10 +216,28 @@ SUPABASE_ANON_KEY="tu-anon-key"
 # el prefijo PUBLIC_ es lo que Astro expone al bundle del navegador.
 PUBLIC_SUPABASE_URL="https://TU-PROYECTO.supabase.co"
 PUBLIC_SUPABASE_ANON_KEY="tu-anon-key"
+
+# Rate limiting (opcional en local) — ver más abajo.
+UPSTASH_REDIS_REST_URL="https://tu-db.upstash.io"
+UPSTASH_REDIS_REST_TOKEN="tu-token"
 ```
 
 > ℹ️ Usa siempre la **anon key**, nunca la `service_role`. La seguridad la da el JWT del
 > usuario junto con las políticas RLS.
+
+**Rate limiting (Upstash Redis).** [`src/lib/rate-limit.js`](./src/lib/rate-limit.js)
+limita `register-income`, `expense` y `save-budget-config` a 20 peticiones por usuario
+cada 60 s (ventana deslizante), con [Upstash](https://upstash.com/) como store
+compartido entre las funciones serverless de Vercel. Para obtener las claves:
+
+1. Crea una cuenta gratuita en [upstash.com](https://upstash.com/) → **Create Database**
+   (tipo *Redis*, cualquier región cercana a tu deploy de Vercel).
+2. En el panel de la base de datos, pestaña **REST API**, copia **`UPSTASH_REDIS_REST_URL`**
+   y **`UPSTASH_REDIS_REST_TOKEN`** a tu `.env`.
+
+Son **opcionales en local**: si no están configuradas, el rate limiting queda
+desactivado (deja pasar todo) en vez de romper la app o bloquear peticiones — solo
+hacen falta antes de desplegar a producción (ver *Despliegue en Vercel* más abajo).
 
 ### 3. Base de datos
 
@@ -251,8 +269,11 @@ El proyecto usa el adaptador **`@astrojs/vercel`** (SSR serverless), declarado e
 automáticamente (build: `npm run build`, sin configuración extra).
 
 1. **Variables de entorno** — *Project → Settings → Environment Variables*: añade las
-   **cuatro** claves para *Production* (y *Preview* si lo usas):
+   **cuatro** claves de Supabase para *Production* (y *Preview* si lo usas):
    `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `PUBLIC_SUPABASE_URL`, `PUBLIC_SUPABASE_ANON_KEY`.
+   Añade también `UPSTASH_REDIS_REST_URL` y `UPSTASH_REDIS_REST_TOKEN` — **sin ellas el
+   rate limiting queda desactivado en producción** (no rompe el deploy, pero deja de
+   proteger `register-income` / `expense` / `save-budget-config`).
 2. **Google OAuth** — en Supabase, añade la Redirect URL de producción:
    `https://TU-DOMINIO.vercel.app/dashboard` (además de la de localhost).
 3. **Salida de build** — el adaptador escribe en `.vercel/output/`, ya ignorado por
