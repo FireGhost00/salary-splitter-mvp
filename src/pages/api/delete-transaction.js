@@ -74,10 +74,34 @@ export async function DELETE(context) {
 	}
 
 	// --- Borrado por bloque viejo (created_at + tipo ingreso) --------
+	// Solo para ingresos ANTIGUOS sin `group_id`. Si alguna fila de ese
+	// timestamp ya tiene `group_id`, este match grueso es inseguro: se rechaza
+	// y el llamador debe borrar por `group_id`.
 	if (typeof rawCreatedAt === "string" && rawCreatedAt.trim() !== "") {
 		const createdAt = rawCreatedAt.trim();
 		if (!/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(createdAt)) {
 			return json({ error: "`created_at` inválido." }, 400);
+		}
+
+		const { data: matchRows, error: matchErr } = await supabase
+			.from("transactions")
+			.select("id, group_id")
+			.eq("created_at", createdAt)
+			.eq("user_id", user.id)
+			.eq("transaction_type", "ingreso");
+
+		if (matchErr) return json({ error: matchErr.message }, 500);
+		if (!matchRows || matchRows.length === 0) {
+			return json({ error: "No se encontró el bloque (o no es tuyo)." }, 404);
+		}
+		if (matchRows.some((r) => r.group_id != null)) {
+			return json(
+				{
+					error:
+						"Ese bloque tiene un identificador de grupo; bórralo usando `group_id`.",
+				},
+				409,
+			);
 		}
 
 		const { data, error } = await supabase
