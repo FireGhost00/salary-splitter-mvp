@@ -7,6 +7,7 @@ import {
 	parseJsonBody,
 	v,
 } from "../../lib/validation.js";
+import { checkRateLimit, rateLimitResponse } from "../../lib/rate-limit.js";
 
 // Ruta on-demand: reparte un ingreso con el modelo 50/30/20. Deuda y Provisión
 // Mensual se absorben dentro del 50 % de Necesidad. Protegida por SSR.
@@ -76,6 +77,10 @@ export async function POST(context) {
 		data: { user },
 	} = await supabase.auth.getUser();
 	if (!user) return json({ error: "No autenticado." }, 401);
+
+	// Rate limiting en memoria (badén anti-abuso; ver src/lib/rate-limit.js).
+	const rl = checkRateLimit(`${user.id}:register-income`);
+	if (!rl.allowed) return rateLimitResponse(rl.retryAfterSec);
 
 	// --- Datos ------------------------------------------------------------
 	const { data: catRows, error: catError } = await supabase

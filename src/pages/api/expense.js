@@ -5,6 +5,7 @@ import {
 	parseJsonBody,
 	v,
 } from "../../lib/validation.js";
+import { checkRateLimit, rateLimitResponse } from "../../lib/rate-limit.js";
 
 // Ruta on-demand: necesita ejecutarse en el servidor para insertar en Supabase.
 // El resto del sitio sigue siendo estático (CONVENCIONES.md §1).
@@ -93,6 +94,10 @@ export async function POST(context) {
 	if (!user) {
 		return json({ error: "No autenticado." }, 401);
 	}
+
+	// Rate limiting en memoria (badén anti-abuso; ver src/lib/rate-limit.js).
+	const rl = checkRateLimit(`${user.id}:expense`);
+	if (!rl.allowed) return rateLimitResponse(rl.retryAfterSec);
 
 	// Si viene un rubro de provisión, tiene que ser del usuario.
 	if (provItemId) {

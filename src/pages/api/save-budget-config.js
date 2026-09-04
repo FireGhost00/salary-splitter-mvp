@@ -11,6 +11,7 @@ import {
 	parseJsonBody,
 	v,
 } from "../../lib/validation.js";
+import { checkRateLimit, rateLimitResponse } from "../../lib/rate-limit.js";
 
 // Ruta on-demand: guarda la config del presupuesto (deuda + provisiones).
 // Protegida por SSR.
@@ -100,6 +101,10 @@ export async function POST(context) {
 		data: { user },
 	} = await supabase.auth.getUser();
 	if (!user) return json({ error: "No autenticado." }, 401);
+
+	// Rate limiting en memoria (badén anti-abuso; ver src/lib/rate-limit.js).
+	const rl = checkRateLimit(`${user.id}:save-budget-config`);
+	if (!rl.allowed) return rateLimitResponse(rl.retryAfterSec);
 
 	// Reglas semánticas de negocio (no de forma) -> 422.
 	if (debtEnabled && debtCents <= 0) {
