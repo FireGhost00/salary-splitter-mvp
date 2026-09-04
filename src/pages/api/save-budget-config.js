@@ -5,6 +5,12 @@ import {
 	SYS_CAT,
 	monthlyProvisionCents,
 } from "../../lib/budget.js";
+import {
+	ValidationError,
+	jsonError,
+	parseJsonBody,
+	v,
+} from "../../lib/validation.js";
 
 // Ruta on-demand: guarda la config del presupuesto (deuda + provisiones).
 // Protegida por SSR.
@@ -57,11 +63,36 @@ async function ensureSystemCategories(supabase, userId, { debt, provisions }) {
  * `provision_items` + siembra de las categorías del sistema.
  */
 export async function POST(context) {
-	let body;
+	// Validación de forma del payload (400 con { error } en español).
+	// Booleanos estrictos; montos = enteros de centavos (Patrón Money §2/§4),
+	// sin redondear floats ni coaccionar strings.
+	let debtEnabled;
+	let provisionsEnabled;
+	let debtCents;
+	let items;
 	try {
-		body = await context.request.json();
-	} catch {
-		return json({ error: "Cuerpo JSON inválido." }, 400);
+		const body = await parseJsonBody(context.request);
+		debtEnabled = v.boolean(body.debt_enabled, "debt_enabled");
+		provisionsEnabled = v.boolean(body.provisions_enabled, "provisions_enabled");
+		debtCents = v.intCents(body.debt_monthly_cents, "debt_monthly_cents", {
+			min: 0,
+		});
+
+		items = v.optionalArray(body.provision_items, "provision_items").map(
+			(raw, i) => ({
+				label: v.nonEmptyString(raw?.label, `provision_items[${i}].label`, {
+					maxLen: 80,
+				}),
+				annual_amount_cents: v.intCents(
+					raw?.annual_amount_cents,
+					`provision_items[${i}].annual_amount_cents`,
+					{ min: 1 },
+				),
+			}),
+		);
+	} catch (e) {
+		if (e instanceof ValidationError) return jsonError(e.message);
+		throw e;
 	}
 
 	const supabase = createSupabaseServerClient(context);
@@ -70,31 +101,9 @@ export async function POST(context) {
 	} = await supabase.auth.getUser();
 	if (!user) return json({ error: "No autenticado." }, 401);
 
-	const debtEnabled = body?.debt_enabled === true;
-	const provisionsEnabled = body?.provisions_enabled === true;
-
-	const debtCents = Math.round(Number(body?.debt_monthly_cents) || 0);
-	if (!Number.isInteger(debtCents) || debtCents < 0) {
-		return json({ error: "`debt_monthly_cents` debe ser un entero >= 0." }, 422);
-	}
+	// Reglas semánticas de negocio (no de forma) -> 422.
 	if (debtEnabled && debtCents <= 0) {
 		return json({ error: "Habilitaste Deuda: ingresa un pago mensual > 0." }, 422);
-	}
-
-	// Normaliza rubros. Solo se guardan si Provisiones está activo.
-	const rawItems = Array.isArray(body?.provision_items) ? body.provision_items : [];
-	const items = [];
-	for (const raw of rawItems) {
-		const label = String(raw?.label ?? "").trim();
-		const cents = Math.round(Number(raw?.annual_amount_cents) || 0);
-		if (!label) continue;
-		if (!Number.isInteger(cents) || cents <= 0) {
-			return json(
-				{ error: `El rubro "${label}" necesita un monto anual > 0.` },
-				422,
-			);
-		}
-		items.push({ label, annual_amount_cents: cents });
 	}
 	if (provisionsEnabled && items.length === 0) {
 		return json(
