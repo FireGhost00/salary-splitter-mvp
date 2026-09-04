@@ -96,6 +96,40 @@ servidor pueda leerla en la siguiente petición.
   `user_id = auth.uid()`. Aunque un endpoint tuviera un bug, la base de datos **nunca
   devuelve filas de otro usuario**. El aislamiento no depende del código de la app.
 
+### 6. Logging estructurado y cómo consultarlo en Vercel
+[`src/lib/logger.js`](../src/lib/logger.js) centraliza el logging de error de los 7
+endpoints en `src/pages/api/`: cada uno envuelve su handler exportado con
+`withLogging("<endpoint>", handler)`, que:
+
+- Loguea (una línea JSON a `console.error`) toda respuesta con status `>= 500` y
+  cualquier excepción no controlada (p. ej. `createSupabaseServerClient` sin
+  credenciales), devolviendo en ese caso un `500 { error }` uniforme en vez del
+  error genérico de Astro. Las respuestas 2xx/4xx (401, 422, 429…) no se loguean:
+  son resultados esperados, no fallos a investigar.
+- **Nunca** loguea cookies, `SUPABASE_ANON_KEY` / `SUPABASE_URL`, el `service_role
+  key` (que este proyecto no usa en ningún lado — solo la `anon key`, ver §4) ni el
+  cuerpo crudo de la petición (montos, etc.). `redact()` sustituye además cualquier
+  JWT o cookie de sesión de Supabase que apareciera en un mensaje de error por
+  `[redacted]`, como defensa adicional.
+
+Cada línea tiene esta forma:
+
+```json
+{ "level": "error", "endpoint": "expense", "method": "POST", "status": 500, "user_id": "8f2c…-uuid", "error": "mensaje corto", "timestamp": "2026-09-04T13:42:00.000Z" }
+```
+
+**Cómo consultarlos en Vercel** (captura stdout/stderr de cada función serverless
+sin configuración adicional):
+
+1. Dashboard del proyecto → pestaña **Logs** (u **Observability → Logs**) → filtra
+   por ruta (`/api/register-income`, `/api/expense`, …) o por texto (`"level":"error"`).
+2. Desde un deploy concreto: **Deployments → (deploy) → Functions → (función) → Logs**.
+3. En tiempo real por CLI, con el proyecto vinculado: `vercel logs --follow`.
+
+Como cada línea es un JSON, se puede filtrar por `endpoint`, `status` o `user_id`
+directamente en el buscador de logs de Vercel, o reenviarlo a un *log drain* si se
+necesita retención más larga que la que ofrece el plan de Vercel.
+
 ### Resumen del recorrido
 ```
 Navegador ──cookies──▶ middleware.js ──getSession()──▶ supabase.js ──▶ Supabase Auth
