@@ -1,5 +1,11 @@
 import { createSupabaseServerClient } from "../../lib/supabase.js";
 import { SUBCATEGORY_MACROS, SYS_CAT } from "../../lib/budget.js";
+import {
+	ValidationError,
+	jsonError,
+	parseJsonBody,
+	v,
+} from "../../lib/validation.js";
 
 // Ruta on-demand: crea una subcategoría personalizada. Protegida por SSR.
 export const prerender = false;
@@ -19,25 +25,21 @@ const RESERVED = new Set(Object.values(SYS_CAT));
  * Inserta una fila en `categories` (idempotente por (user_id, name)).
  */
 export async function POST(context) {
-	let body;
+	// Validación de forma del payload (400 con { error } en español).
+	let name;
+	let macroType;
 	try {
-		body = await context.request.json();
-	} catch {
-		return json({ error: "Cuerpo JSON inválido." }, 400);
+		const body = await parseJsonBody(context.request);
+		name = v.nonEmptyString(body.name, "name");
+		macroType = v.enum(body.macro_type, "macro_type", SUBCATEGORY_MACROS);
+	} catch (e) {
+		if (e instanceof ValidationError) return jsonError(e.message);
+		throw e;
 	}
 
-	const name = typeof body?.name === "string" ? body.name.trim() : "";
-	const macroType = String(body?.macro_type ?? "");
-
-	if (!name) return json({ error: "El nombre es obligatorio." }, 400);
+	// Regla semántica (no de forma): un nombre del sistema no se puede reutilizar.
 	if (RESERVED.has(name)) {
 		return json({ error: `"${name}" es una categoría reservada.` }, 422);
-	}
-	if (!SUBCATEGORY_MACROS.includes(macroType)) {
-		return json(
-			{ error: "macro_type debe ser 'necesidad', 'deseo' o 'ahorro'." },
-			422,
-		);
 	}
 
 	const supabase = createSupabaseServerClient(context);
