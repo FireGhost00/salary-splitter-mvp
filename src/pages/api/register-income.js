@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { createSupabaseServerClient } from "../../lib/supabase.js";
 import { SYS_CAT, monthlyProvisionCents, splitIncome } from "../../lib/budget.js";
+import {
+	ValidationError,
+	jsonError,
+	parseJsonBody,
+	v,
+} from "../../lib/validation.js";
 
 // Ruta on-demand: reparte un ingreso con el modelo 50/30/20. Deuda y Provisión
 // Mensual se absorben dentro del 50 % de Necesidad. Protegida por SSR.
@@ -18,8 +24,6 @@ function localDateISO(d = new Date()) {
 	const p = (n) => String(n).padStart(2, "0");
 	return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
-
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * Reparte `total` (entero) entre `weights` proporcionalmente, con Math.floor y
@@ -51,28 +55,21 @@ function distribute(total, weights) {
  *    incluye `partial` y `split.still_uncovered_cents`.
  */
 export async function POST(context) {
-	let body;
+	// Validación de forma del payload (400 con { error } en español).
+	// `amount_cents`: entero de centavos estricto (Patrón Money §2/§4).
+	// `effective_date`: opcional; determina el mes cuyo remanente fijo
+	// (deuda/provisión) se evalúa y la fecha de TODAS las filas del ingreso.
+	let amountCents;
+	let effectiveDate;
 	try {
-		body = await context.request.json();
-	} catch {
-		return json({ error: "Cuerpo JSON inválido." }, 400);
+		const body = await parseJsonBody(context.request);
+		amountCents = v.intCents(body.amount_cents, "amount_cents", { min: 1 });
+		effectiveDate =
+			v.optionalIsoDate(body.effective_date, "effective_date") ?? localDateISO();
+	} catch (e) {
+		if (e instanceof ValidationError) return jsonError(e.message);
+		throw e;
 	}
-
-	const amountCents = Number(body?.amount_cents);
-	if (!Number.isInteger(amountCents) || amountCents <= 0) {
-		return json({ error: "`amount_cents` debe ser un entero mayor que 0." }, 400);
-	}
-
-	// Fecha del ingreso elegida por el usuario (YYYY-MM-DD). Si no viene, hoy.
-	// Determina el mes cuyo remanente fijo (deuda/provisión) se evalúa y la
-	// fecha con la que se guardan TODAS las filas de este ingreso.
-	if (body?.effective_date != null && !DATE_RE.test(String(body.effective_date))) {
-		return json(
-			{ error: "`effective_date` debe tener formato YYYY-MM-DD." },
-			400,
-		);
-	}
-	const effectiveDate = body?.effective_date ?? localDateISO();
 
 	const supabase = createSupabaseServerClient(context);
 	const {
