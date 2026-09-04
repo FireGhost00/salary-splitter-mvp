@@ -20,6 +20,8 @@
     "@tailwindcss/vite": "^4.3.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
+    "@upstash/ratelimit": "^2.0.8",
+    "@upstash/redis": "^1.38.4",
     "astro": "^7.2.9",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
