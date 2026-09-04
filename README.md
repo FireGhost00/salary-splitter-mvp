@@ -30,6 +30,7 @@ sobres digitales: **Necesidad**, **Deseo** y **Ahorro**. Sin hojas de cálculo, 
 - [📁 Estructura del proyecto](#-estructura-del-proyecto)
 - [🚀 Instalación local](#-instalación-local)
 - [☁️ Despliegue en Vercel](#️-despliegue-en-vercel)
+- [✅ Integración continua](#-integración-continua)
 - [📐 Convenciones](#-convenciones)
 - [📄 Licencia](#-licencia)
 
@@ -280,6 +281,22 @@ automáticamente (build: `npm run build`, sin configuración extra).
    `.gitignore`. No hay que commitearlo.
 4. **Ruta raíz** — `/` redirige a `/login`, así que el dominio base nunca da 404.
 5. Cada `git push` a la rama conectada dispara un *deploy*; cada PR genera un *Preview*.
+
+---
+
+## ✅ Integración continua
+
+Cada `push` y cada `pull_request` hacia **`main`** dispara el workflow
+[`.github/workflows/ci.yml`](./.github/workflows/ci.yml), que sobre Node ≥ 22.12:
+
+1. instala las dependencias con `npm ci`,
+2. ejecuta las pruebas unitarias con `npm test` (176 casos: motor 50/30/20,
+   formateo de moneda, validación de payloads, logging, rate limiting),
+3. compila el proyecto con `npm run build`.
+
+Es **solo verificación**: no despliega (de eso se encarga Vercel) y no usa
+ningún secreto — ni las cuatro claves de Supabase ni las de Upstash hacen
+falta en build time.
 
 ---
 

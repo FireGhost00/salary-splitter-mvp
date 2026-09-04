@@ -1,0 +1,37 @@
+name: CI
+
+# Solo verificación: instala, prueba y compila. El despliegue lo hace Vercel
+# por su cuenta; aquí NO se despliega ni se usan secretos.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Test & build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          # Debe cumplir "engines.node" de package.json (>= 22.12).
+          node-version: "22.12.0"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
