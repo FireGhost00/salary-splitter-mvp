@@ -1,4 +1,5 @@
 import { createSupabaseServerClient } from "../../lib/supabase.js";
+import { jsonError } from "../../lib/validation.js";
 
 // Ruta on-demand: un lote paginado del historial. Protegida por SSR.
 export const prerender = false;
@@ -27,8 +28,16 @@ export async function GET(context) {
 	} = await supabase.auth.getUser();
 	if (!user) return json({ error: "No autenticado." }, 401);
 
-	const parsed = Number.parseInt(context.url.searchParams.get("page") ?? "1", 10);
-	const page = Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+	// `page` ausente -> 1. Si viene, debe ser un entero >= 1: cualquier otra
+	// cosa ("abc", "-3", "1.5") es 400, no un clamp silencioso.
+	const rawPage = context.url.searchParams.get("page");
+	let page = 1;
+	if (rawPage != null) {
+		if (!/^\d+$/.test(rawPage) || Number.parseInt(rawPage, 10) < 1) {
+			return jsonError("`page` debe ser un entero mayor o igual que 1.");
+		}
+		page = Number.parseInt(rawPage, 10);
+	}
 	const from = (page - 1) * PAGE_SIZE;
 	const to = from + PAGE_SIZE - 1;
 
