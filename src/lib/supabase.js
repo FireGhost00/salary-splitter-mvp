@@ -43,7 +43,13 @@ export function createSupabaseServerClient(context) {
 			},
 			setAll(cookiesToSet) {
 				for (const { name, value, options } of cookiesToSet) {
-					context.cookies.set(name, value, options);
+					// `@supabase/ssr` no marca `Secure`; se fuerza aquí. En prod
+					// (HTTPS) no cambia nada; en dev el navegador igual acepta
+					// cookies `Secure` sobre http://localhost (contexto seguro).
+					// `HttpOnly` y `SameSite` se dejan como los define la librería:
+					// el cliente de navegador y el flujo PKCE de Google los
+					// necesitan tal cual (cookie legible por JS, SameSite=Lax).
+					context.cookies.set(name, value, { ...options, secure: true });
 				}
 			},
 		},
