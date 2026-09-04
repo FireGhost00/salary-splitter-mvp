@@ -1,5 +1,6 @@
 import { createSupabaseServerClient } from "../../lib/supabase.js";
 import { jsonError } from "../../lib/validation.js";
+import { withLogging } from "../../lib/logger.js";
 
 // Ruta on-demand: un lote paginado del historial. Protegida por SSR.
 export const prerender = false;
@@ -21,7 +22,7 @@ function json(payload, status = 200) {
  * descendente, vía `.range(from, to)`. Resuelve el nombre real de la categoría
  * (cruce por UUID si aplica; en esta rama `category_id` ya suele ser el nombre).
  */
-export async function GET(context) {
+async function handleGET(context) {
 	const supabase = createSupabaseServerClient(context);
 	const {
 		data: { user },
@@ -74,3 +75,5 @@ export async function GET(context) {
 
 	return json({ page, page_size: PAGE_SIZE, transactions });
 }
+
+export const GET = withLogging("get-history", handleGET);

@@ -6,6 +6,7 @@ import {
 	parseJsonBody,
 	v,
 } from "../../lib/validation.js";
+import { withLogging } from "../../lib/logger.js";
 
 // Ruta on-demand: crea una subcategoría personalizada. Protegida por SSR.
 export const prerender = false;
@@ -24,7 +25,7 @@ const RESERVED = new Set(Object.values(SYS_CAT));
  * Body: { name: string, macro_type: "necesidad" | "deseo" | "ahorro" }
  * Inserta una fila en `categories` (idempotente por (user_id, name)).
  */
-export async function POST(context) {
+async function handlePOST(context) {
 	// Validación de forma del payload (400 con { error } en español).
 	let name;
 	let macroType;
@@ -67,3 +68,5 @@ export async function POST(context) {
 
 	return json({ ok: true, category: data ?? { name, macro_type: macroType } }, 200);
 }
+
+export const POST = withLogging("add-category", handlePOST);

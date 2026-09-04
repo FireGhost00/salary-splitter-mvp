@@ -1,5 +1,6 @@
 import { createSupabaseServerClient } from "../../lib/supabase.js";
 import { BASE_SUBCATEGORIES, CORE_CATEGORIES } from "../../lib/budget.js";
+import { withLogging } from "../../lib/logger.js";
 
 // Ruta on-demand: siembra la cuenta del usuario nuevo. Protegida por SSR.
 export const prerender = false;
@@ -17,7 +18,7 @@ function json(payload, status = 200) {
  * usuario de la sesión: las 3 maestras + subcategorías (Alquiler, Supermercado,
  * Restaurantes, …). Idempotente. Responde { ok: true, count }.
  */
-export async function POST(context) {
+async function handlePOST(context) {
 	const supabase = createSupabaseServerClient(context);
 	const {
 		data: { user },
@@ -64,3 +65,5 @@ export async function POST(context) {
 
 	return json({ ok: true, count: count ?? rows.length }, 200);
 }
+
+export const POST = withLogging("seed-account", handlePOST);

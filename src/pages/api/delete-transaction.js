@@ -1,4 +1,5 @@
 import { createSupabaseServerClient } from "../../lib/supabase.js";
+import { withLogging } from "../../lib/logger.js";
 
 // Ruta on-demand: borra una transacción (o un bloque) del usuario de la sesión.
 export const prerender = false;
@@ -21,7 +22,7 @@ function json(payload, status = 200) {
  *   - `id`         -> borra una sola transacción.
  * El filtro por `user_id` impide borrar lo ajeno.
  */
-export async function DELETE(context) {
+async function handleDELETE(context) {
 	const url = new URL(context.request.url);
 	let rawId = url.searchParams.get("id");
 	let rawGroupId = url.searchParams.get("group_id");
@@ -146,3 +147,5 @@ export async function DELETE(context) {
 	}
 	return json({ ok: true, deleted: data[0].id }, 200);
 }
+
+export const DELETE = withLogging("delete-transaction", handleDELETE);

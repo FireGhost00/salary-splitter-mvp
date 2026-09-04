@@ -12,6 +12,7 @@ import {
 	v,
 } from "../../lib/validation.js";
 import { checkRateLimit, rateLimitResponse } from "../../lib/rate-limit.js";
+import { withLogging } from "../../lib/logger.js";
 
 // Ruta on-demand: guarda la config del presupuesto (deuda + provisiones).
 // Protegida por SSR.
@@ -63,7 +64,7 @@ async function ensureSystemCategories(supabase, userId, { debt, provisions }) {
  * Upsert en `budget_config` (1 fila/usuario) + reemplazo total de
  * `provision_items` + siembra de las categorías del sistema.
  */
-export async function POST(context) {
+async function handlePOST(context) {
 	// Validación de forma del payload (400 con { error } en español).
 	// Booleanos estrictos; montos = enteros de centavos (Patrón Money §2/§4),
 	// sin redondear floats ni coaccionar strings.
@@ -183,3 +184,5 @@ export async function POST(context) {
 			(provisionsEnabled ? monthlyProvisionCents(items) : 0),
 	});
 }
+
+export const POST = withLogging("save-budget-config", handlePOST);

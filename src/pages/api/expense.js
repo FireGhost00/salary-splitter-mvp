@@ -6,6 +6,7 @@ import {
 	v,
 } from "../../lib/validation.js";
 import { checkRateLimit, rateLimitResponse } from "../../lib/rate-limit.js";
+import { withLogging } from "../../lib/logger.js";
 
 // Ruta on-demand: necesita ejecutarse en el servidor para insertar en Supabase.
 // El resto del sitio sigue siendo estático (CONVENCIONES.md §1).
@@ -44,7 +45,7 @@ const MASTER_FALLBACKS = new Set(["Necesidad", "Deseo", "Ahorro"]);
  * respaldo, la transacción se PARTE: una parte vacía el sobre original y el
  * remanente va contra el sobre de respaldo (master o provisión).
  */
-export async function POST(context) {
+async function handlePOST(context) {
 	// Validación de forma del payload (400 con { error } en español).
 	// El monto es SIEMPRE un entero de centavos: se eliminó la vía `amount`
 	// en dólares (float). `category_id` obligatorio; el resto opcional.
@@ -266,3 +267,5 @@ export async function POST(context) {
 		200,
 	);
 }
+
+export const POST = withLogging("expense", handlePOST);

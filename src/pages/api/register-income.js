@@ -8,6 +8,7 @@ import {
 	v,
 } from "../../lib/validation.js";
 import { checkRateLimit, rateLimitResponse } from "../../lib/rate-limit.js";
+import { withLogging } from "../../lib/logger.js";
 
 // Ruta on-demand: reparte un ingreso con el modelo 50/30/20. Deuda y Provisión
 // Mensual se absorben dentro del 50 % de Necesidad. Protegida por SSR.
@@ -55,7 +56,7 @@ function distribute(total, weights) {
  * 4. INSERT masivo: una transacción de ingreso por sobre tocado; la respuesta
  *    incluye `partial` y `split.still_uncovered_cents`.
  */
-export async function POST(context) {
+async function handlePOST(context) {
 	// Validación de forma del payload (400 con { error } en español).
 	// `amount_cents`: entero de centavos estricto (Patrón Money §2/§4).
 	// `effective_date`: opcional; determina el mes cuyo remanente fijo
@@ -288,3 +289,5 @@ export async function POST(context) {
 		200,
 	);
 }
+
+export const POST = withLogging("register-income", handlePOST);
