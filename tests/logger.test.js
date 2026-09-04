@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { logError, redact, withLogging } from "../src/lib/logger.js";
+import { logError, logWarn, redact, withLogging } from "../src/lib/logger.js";
 
 function fakeContext({ userId = "user-1", method = "POST" } = {}) {
 	return {
@@ -89,6 +89,33 @@ describe("logError", () => {
 	it("trunca mensajes muy largos a 500 caracteres", () => {
 		logError({ endpoint: "e", method: "GET", status: 500, error: "x".repeat(1000) });
 		expect(JSON.parse(spy.mock.calls[0][0]).error.length).toBe(500);
+	});
+});
+
+describe("logWarn", () => {
+	let spy;
+	beforeEach(() => {
+		spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+	});
+	afterEach(() => spy.mockRestore());
+
+	it("imprime una línea JSON con { level: 'warn', endpoint, message, timestamp }", () => {
+		logWarn({ endpoint: "rate-limit", message: "Upstash sin configurar" });
+
+		expect(spy).toHaveBeenCalledTimes(1);
+		const entry = JSON.parse(spy.mock.calls[0][0]);
+		expect(entry).toMatchObject({
+			level: "warn",
+			endpoint: "rate-limit",
+			message: "Upstash sin configurar",
+		});
+		expect(typeof entry.timestamp).toBe("string");
+	});
+
+	it("redacta un JWT embebido en el mensaje", () => {
+		const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abc";
+		logWarn({ endpoint: "rate-limit", message: `token: ${jwt}` });
+		expect(JSON.parse(spy.mock.calls[0][0]).message).toBe("token: [redacted]");
 	});
 });
 

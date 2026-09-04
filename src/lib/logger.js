@@ -58,6 +58,23 @@ export function logError({ endpoint, method, status, userId = null, error }) {
 }
 
 /**
+ * Imprime una línea de log de ADVERTENCIA estructurada: degradación esperada
+ * (p. ej. falta configuración opcional), no el fallo de una petición concreta.
+ *
+ * @param {{ endpoint: string, message: string }} fields
+ */
+export function logWarn({ endpoint, message }) {
+	const entry = {
+		level: "warn",
+		endpoint,
+		message: redact(String(message ?? "")).slice(0, 500),
+		timestamp: new Date().toISOString(),
+	};
+
+	console.warn(JSON.stringify(entry));
+}
+
+/**
  * Envuelve el handler exportado de un endpoint (`POST` / `GET` / `DELETE`)
  * para, de forma consistente en los 7 endpoints de `src/pages/api/`:
  *

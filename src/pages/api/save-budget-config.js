@@ -104,7 +104,7 @@ async function handlePOST(context) {
 	if (!user) return json({ error: "No autenticado." }, 401);
 
 	// Rate limiting en memoria (badén anti-abuso; ver src/lib/rate-limit.js).
-	const rl = checkRateLimit(`${user.id}:save-budget-config`);
+	const rl = await checkRateLimit(`${user.id}:save-budget-config`);
 	if (!rl.allowed) return rateLimitResponse(rl.retryAfterSec);
 
 	// Reglas semánticas de negocio (no de forma) -> 422.

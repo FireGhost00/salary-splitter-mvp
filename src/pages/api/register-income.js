@@ -80,7 +80,7 @@ async function handlePOST(context) {
 	if (!user) return json({ error: "No autenticado." }, 401);
 
 	// Rate limiting en memoria (badén anti-abuso; ver src/lib/rate-limit.js).
-	const rl = checkRateLimit(`${user.id}:register-income`);
+	const rl = await checkRateLimit(`${user.id}:register-income`);
 	if (!rl.allowed) return rateLimitResponse(rl.retryAfterSec);
 
 	// --- Datos ------------------------------------------------------------

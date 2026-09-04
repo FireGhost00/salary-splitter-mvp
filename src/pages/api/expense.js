@@ -97,7 +97,7 @@ async function handlePOST(context) {
 	}
 
 	// Rate limiting en memoria (badén anti-abuso; ver src/lib/rate-limit.js).
-	const rl = checkRateLimit(`${user.id}:expense`);
+	const rl = await checkRateLimit(`${user.id}:expense`);
 	if (!rl.allowed) return rateLimitResponse(rl.retryAfterSec);
 
 	// Si viene un rubro de provisión, tiene que ser del usuario.
