@@ -1,4 +1,10 @@
 import { createSupabaseServerClient } from "../../lib/supabase.js";
+import {
+	ValidationError,
+	jsonError,
+	parseJsonBody,
+	v,
+} from "../../lib/validation.js";
 
 // Ruta on-demand: necesita ejecutarse en el servidor para insertar en Supabase.
 // El resto del sitio sigue siendo estático (CONVENCIONES.md §1).
@@ -21,13 +27,12 @@ function localDateISO(d = new Date()) {
 /** Categorías maestras a las que puede caer un sobregiro. */
 const MASTER_FALLBACKS = new Set(["Necesidad", "Deseo", "Ahorro"]);
 
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-
 /**
  * POST /api/expense
  * Body: {
- *   amount_cents?: number (entero > 0, preferente) | amount?: number (dólares > 0),
+ *   amount_cents: number (entero de centavos > 0),
  *   category_id: string, label?: string, description?: string,
+ *   effective_date?: string (YYYY-MM-DD; hoy por defecto),
  *   provision_item_id?: string,          // rubro de provisión del gasto principal
  *   subcategory?: string,
  *   fallback_category_id?: string,        // sobre de respaldo (master) para el sobregiro
@@ -39,77 +44,41 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
  * remanente va contra el sobre de respaldo (master o provisión).
  */
 export async function POST(context) {
-	const { request } = context;
-	let body;
-	try {
-		body = await request.json();
-	} catch {
-		return json({ error: "Cuerpo JSON inválido." }, 400);
-	}
-
-	const { amount, amount_cents, category_id, label, description } = body ?? {};
-
-	// Fecha del movimiento elegida por el usuario (YYYY-MM-DD). Si no viene, se
-	// usa hoy. Es la fecha contra la que se calcula el saldo disponible del mes
-	// y de la que dependen los informes.
-	if (body?.effective_date != null && !DATE_RE.test(String(body.effective_date))) {
-		return json(
-			{ error: "`effective_date` debe tener formato YYYY-MM-DD." },
-			400,
-		);
-	}
-	const effectiveDate = body?.effective_date ?? localDateISO();
-	const fallbackCategoryId =
-		typeof body?.fallback_category_id === "string"
-			? body.fallback_category_id.trim()
-			: "";
-	const fallbackProvItemId =
-		typeof body?.fallback_provision_item_id === "string" &&
-		body.fallback_provision_item_id.trim()
-			? body.fallback_provision_item_id.trim()
-			: null;
-	// Rubro de provisión concreto (opcional). El gasto se asocia a este id y
-	// category_id sigue siendo "Provisiones" para el sobre agregado.
-	const provItemId =
-		typeof body?.provision_item_id === "string" && body.provision_item_id.trim()
-			? body.provision_item_id.trim()
-			: null;
-	// Subcategoría (opcional). El gasto descuenta del master (category_id) y aquí
-	// se guarda solo para análisis.
-	const subcategory =
-		typeof body?.subcategory === "string" && body.subcategory.trim()
-			? body.subcategory.trim()
-			: null;
-
-	// Monto bruto del gasto en centavos enteros positivos.
+	// Validación de forma del payload (400 con { error } en español).
+	// El monto es SIEMPRE un entero de centavos: se eliminó la vía `amount`
+	// en dólares (float). `category_id` obligatorio; el resto opcional.
 	let grossCents;
-	if (amount_cents !== undefined) {
-		if (!Number.isInteger(amount_cents) || amount_cents <= 0) {
-			return json(
-				{ error: "`amount_cents` debe ser un entero mayor que 0." },
-				400,
-			);
-		}
-		grossCents = amount_cents;
-	} else if (typeof amount === "number" && Number.isFinite(amount) && amount > 0) {
-		grossCents = Math.round(amount * 100);
-	} else {
-		return json(
-			{ error: "Falta `amount_cents` (entero > 0) o `amount` (> 0)." },
-			400,
+	let category_id;
+	let effectiveDate;
+	let fallbackCategoryId;
+	let fallbackProvItemId;
+	let provItemId;
+	let subcategory;
+	let finalLabel;
+	let finalDescription;
+	try {
+		const body = await parseJsonBody(context.request);
+		grossCents = v.intCents(body.amount_cents, "amount_cents", { min: 1 });
+		category_id = v.nonEmptyString(body.category_id, "category_id");
+		effectiveDate =
+			v.optionalIsoDate(body.effective_date, "effective_date") ?? localDateISO();
+		// Rubros de provisión: se dejan como texto libre; su existencia se
+		// comprueba luego contra Supabase (422). category_id del gasto sigue
+		// siendo "Provisiones" para el sobre agregado.
+		provItemId = v.optionalString(body.provision_item_id, "provision_item_id");
+		fallbackProvItemId = v.optionalString(
+			body.fallback_provision_item_id,
+			"fallback_provision_item_id",
 		);
+		fallbackCategoryId =
+			v.optionalString(body.fallback_category_id, "fallback_category_id") ?? "";
+		subcategory = v.optionalString(body.subcategory, "subcategory");
+		finalLabel = v.optionalString(body.label, "label") ?? "Gasto";
+		finalDescription = v.optionalString(body.description, "description");
+	} catch (e) {
+		if (e instanceof ValidationError) return jsonError(e.message);
+		throw e;
 	}
-
-	if (typeof category_id !== "string" || category_id.trim() === "") {
-		return json({ error: "`category_id` es obligatorio." }, 400);
-	}
-
-	const finalLabel =
-		typeof label === "string" && label.trim() !== "" ? label.trim() : "Gasto";
-	const finalDescription =
-		typeof description === "string" && description.trim() !== ""
-			? description.trim()
-			: null;
 
 	let supabase;
 	try {
