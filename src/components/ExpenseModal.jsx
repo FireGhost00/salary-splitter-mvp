@@ -17,6 +17,84 @@ const isSubValue = (v) => typeof v === "string" && v.startsWith(SUB_PREFIX);
 const isPiValue = (v) => typeof v === "string" && v.startsWith(PI_PREFIX);
 
 /**
+ * Modo efectivo de sobregiro. Si no hay ningún sobre con saldo para cubrir
+ * el faltante, "fallback" no es una opción real y se fuerza "negative" (antes
+ * de esto era un callejón sin salida). Si sí hay opciones, respeta lo que el
+ * usuario haya elegido (por defecto "fallback").
+ *
+ * @param {number} fallbackOptionsLength
+ * @param {"fallback" | "negative"} selectedMode
+ * @returns {"fallback" | "negative"}
+ */
+export function resolveOverdraftMode(fallbackOptionsLength, selectedMode) {
+	if (selectedMode === "fallback" && fallbackOptionsLength === 0) {
+		return "negative";
+	}
+	return selectedMode;
+}
+
+/**
+ * Arma el body de POST /api/expense. En modo "negative" NO incluye
+ * `fallback_category_id` ni `fallback_provision_item_id`: el backend
+ * (src/pages/api/expense.js) toma entonces el "camino simple" e inserta el
+ * gasto completo sin chequear saldo, dejando el sobre en negativo.
+ *
+ * @param {{
+ *   amountCents: number,
+ *   concept: string,
+ *   effectiveDate: string,
+ *   selection: string,
+ *   selectedSub: { name: string, parentMaster: string } | null,
+ *   selectedProvisionItem: { id: string, label: string } | null,
+ *   selectedCategory: { name: string } | null,
+ *   isOverdraft: boolean,
+ *   overdraftMode: "fallback" | "negative",
+ *   effectiveFallback: string,
+ * }} params
+ * @returns {Record<string, unknown>}
+ */
+export function buildExpensePayload({
+	amountCents,
+	concept,
+	effectiveDate,
+	selection,
+	selectedSub,
+	selectedProvisionItem,
+	selectedCategory,
+	isOverdraft,
+	overdraftMode,
+	effectiveFallback,
+}) {
+	const body = {
+		amount_cents: amountCents,
+		description: (concept ?? "").trim(),
+		effective_date: effectiveDate,
+	};
+	if (selectedSub) {
+		body.category_id = selectedSub.parentMaster;
+		body.subcategory = selectedSub.name;
+		body.label = selectedSub.name;
+	} else if (selectedProvisionItem) {
+		body.category_id = "Provisiones";
+		body.provision_item_id = selectedProvisionItem.id;
+		body.label = selectedProvisionItem.label;
+	} else {
+		body.category_id = selection;
+		body.label = selectedCategory?.name ?? selection;
+	}
+	if (isOverdraft && overdraftMode === "fallback") {
+		if (effectiveFallback.startsWith(PI_PREFIX)) {
+			body.fallback_provision_item_id = effectiveFallback.slice(
+				PI_PREFIX.length,
+			);
+		} else {
+			body.fallback_category_id = effectiveFallback;
+		}
+	}
+	return body;
+}
+
+/**
  * Modal de Gasto Rápido (Modo Oscuro).
  *
  * El <select> agrupa por master (Necesidad / Deseo / Ahorro), cada uno con la
@@ -135,14 +213,10 @@ export default function ExpenseModal({
 			? fallbackId
 			: (fallbackOptions[0]?.value ?? "");
 
-	// Modo efectivo: si no hay ningún sobre con saldo, "fallback" queda
-	// forzado a "negative" (antes esto era un callejón sin salida). Si sí hay
-	// opciones, respeta lo que el usuario haya elegido (por defecto "fallback",
-	// igual que el comportamiento previo a este cambio).
-	const overdraftMode =
-		overdraftModeChoice === "fallback" && fallbackOptions.length === 0
-			? "negative"
-			: overdraftModeChoice;
+	const overdraftMode = resolveOverdraftMode(
+		fallbackOptions.length,
+		overdraftModeChoice,
+	);
 
 	useEffect(() => {
 		if (!open) return;
@@ -192,35 +266,18 @@ export default function ExpenseModal({
 			return;
 		}
 
-		const body = {
-			amount_cents: amountCents,
-			description: concept.trim(),
-			effective_date: effectiveDate,
-		};
-		if (selectedSub) {
-			body.category_id = selectedSub.parentMaster;
-			body.subcategory = selectedSub.name;
-			body.label = selectedSub.name;
-		} else if (selectedProvisionItem) {
-			body.category_id = "Provisiones";
-			body.provision_item_id = selectedProvisionItem.id;
-			body.label = selectedProvisionItem.label;
-		} else {
-			body.category_id = selection;
-			body.label = selectedCategory?.name ?? selection;
-		}
-		// Modo "negative": no se manda ningún fallback_* -> el backend toma el
-		// "camino simple" (src/pages/api/expense.js) e inserta el gasto completo
-		// sin chequear saldo, dejando el sobre en negativo.
-		if (isOverdraft && overdraftMode === "fallback") {
-			if (effectiveFallback.startsWith(PI_PREFIX)) {
-				body.fallback_provision_item_id = effectiveFallback.slice(
-					PI_PREFIX.length,
-				);
-			} else {
-				body.fallback_category_id = effectiveFallback;
-			}
-		}
+		const body = buildExpensePayload({
+			amountCents,
+			concept,
+			effectiveDate,
+			selection,
+			selectedSub,
+			selectedProvisionItem,
+			selectedCategory,
+			isOverdraft,
+			overdraftMode,
+			effectiveFallback,
+		});
 
 		setIsSubmitting(true);
 		setError(null);

@@ -1,6 +1,19 @@
 import { formatCents } from "../lib/money";
 
 /**
+ * "Por usar" de un rubro de provisión. SÍ puede quedar negativo: un gasto
+ * contra este rubro puede dejarse en negativo sin sobre de respaldo (ver
+ * ExpenseModal, modo "Dejar el sobre en negativo") — a propósito, sin clamp.
+ *
+ * @param {number} savedCents
+ * @param {number} usedCents
+ * @returns {number}
+ */
+export function computeRemainingProvisionCents(savedCents, usedCents) {
+	return savedCents - usedCents;
+}
+
+/**
  * Tabla detallada por rubro de provisión (Modo Oscuro), estilo hoja de Excel.
  *
  * @param {{ data?: {
@@ -39,10 +52,10 @@ export default function ProvisionsDetailedTable({ data = [] }) {
 				</thead>
 				<tbody className="divide-y divide-slate-700">
 					{data.map((row) => {
-						// "Por usar" SÍ puede quedar negativo: un gasto contra este rubro
-						// puede dejarse en negativo sin sobre de respaldo (ver
-						// ExpenseModal, modo "Dejar el sobre en negativo").
-						const saldoVisible = row.savedCents - row.usedCents;
+						const saldoVisible = computeRemainingProvisionCents(
+							row.savedCents,
+							row.usedCents,
+						);
 						const enNegativo = saldoVisible < 0;
 						const enCero = saldoVisible === 0;
 						return (

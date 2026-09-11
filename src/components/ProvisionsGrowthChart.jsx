@@ -7,6 +7,22 @@ const H = 220;
 const PAD = { top: 16, right: 20, bottom: 28, left: 56 };
 
 /**
+ * Dominio Y del área/línea: un rubro de provisión puede quedar en negativo
+ * (gasto "dejado en negativo" sin sobre de respaldo, ver ExpenseModal), así
+ * que el mínimo NO se recorta a 0. Si nada es negativo, minV = 0 y esto se
+ * reduce exactamente al comportamiento anterior al fix (línea de $0 siempre
+ * al pie del gráfico).
+ *
+ * @param {number[]} values  Saldos acumulados en centavos, uno por punto.
+ * @returns {{ minV: number, maxV: number, range: number }}
+ */
+export function computeYDomain(values = []) {
+	const maxV = Math.max(1, ...values);
+	const minV = Math.min(0, ...values);
+	return { minV, maxV, range: maxV - minV };
+}
+
+/**
  * AreaChart del crecimiento acumulado de las Provisiones (sinking funds) a lo
  * largo del año. Modo Oscuro, área en emerald-400 con gradiente translúcido.
  * Sin librerías: SVG + viewBox para el responsive.
@@ -16,20 +32,13 @@ const PAD = { top: 16, right: 20, bottom: 28, left: 56 };
  */
 export default function ProvisionsGrowthChart({ data = [] }) {
 	const geom = useMemo(() => {
-		// Un rubro de provisión puede quedar en negativo (gasto "dejado en
-		// negativo" sin sobre de respaldo, ver ExpenseModal). El dominio Y usa
-		// min/max reales -> la línea de $0 es dinámica; si nada es negativo,
-		// minV = 0 y esto se reduce exactamente al comportamiento anterior
-		// (línea de $0 siempre al pie del gráfico).
 		const points = data.map((d, i) => ({
 			month: d.month,
 			value: Number(d.balanceCents) || 0,
 			i,
 		}));
 		const n = points.length;
-		const maxV = Math.max(1, ...points.map((p) => p.value));
-		const minV = Math.min(0, ...points.map((p) => p.value));
-		const range = maxV - minV;
+		const { minV, maxV, range } = computeYDomain(points.map((p) => p.value));
 		const innerW = W - PAD.left - PAD.right;
 		const innerH = H - PAD.top - PAD.bottom;
 		const baseY = PAD.top + innerH;
