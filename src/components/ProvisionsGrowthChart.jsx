@@ -16,19 +16,27 @@ const PAD = { top: 16, right: 20, bottom: 28, left: 56 };
  */
 export default function ProvisionsGrowthChart({ data = [] }) {
 	const geom = useMemo(() => {
+		// Un rubro de provisión puede quedar en negativo (gasto "dejado en
+		// negativo" sin sobre de respaldo, ver ExpenseModal). El dominio Y usa
+		// min/max reales -> la línea de $0 es dinámica; si nada es negativo,
+		// minV = 0 y esto se reduce exactamente al comportamiento anterior
+		// (línea de $0 siempre al pie del gráfico).
 		const points = data.map((d, i) => ({
 			month: d.month,
-			value: Math.max(0, Number(d.balanceCents) || 0),
+			value: Number(d.balanceCents) || 0,
 			i,
 		}));
 		const n = points.length;
 		const maxV = Math.max(1, ...points.map((p) => p.value));
+		const minV = Math.min(0, ...points.map((p) => p.value));
+		const range = maxV - minV;
 		const innerW = W - PAD.left - PAD.right;
 		const innerH = H - PAD.top - PAD.bottom;
 		const baseY = PAD.top + innerH;
 
 		const x = (i) => PAD.left + (n <= 1 ? 0 : (i / (n - 1)) * innerW);
-		const y = (v) => PAD.top + innerH - (v / maxV) * innerH;
+		const y = (v) => PAD.top + innerH - ((v - minV) / range) * innerH;
+		const zeroY = y(0);
 
 		const line = points
 			.map(
@@ -38,10 +46,10 @@ export default function ProvisionsGrowthChart({ data = [] }) {
 			.join(" ");
 		const area =
 			n > 0
-				? `${line} L ${x(n - 1).toFixed(1)} ${baseY} L ${x(0).toFixed(1)} ${baseY} Z`
+				? `${line} L ${x(n - 1).toFixed(1)} ${zeroY} L ${x(0).toFixed(1)} ${zeroY} Z`
 				: "";
 
-		return { points, maxV, baseY, x, y, line, area };
+		return { points, maxV, minV, baseY, zeroY, x, y, line, area };
 	}, [data]);
 
 	// Hay algo que dibujar si cualquier mes tiene saldo acumulado != 0.
@@ -63,7 +71,11 @@ export default function ProvisionsGrowthChart({ data = [] }) {
 				<span className="text-xs uppercase tracking-wider text-slate-400">
 					Saldo acumulado
 				</span>
-				<span className="font-mono text-sm font-semibold text-emerald-400">
+				<span
+					className={`font-mono text-sm font-semibold ${
+						peak < 0 ? "text-rose-400" : "text-emerald-400"
+					}`}
+				>
 					{formatCents(peak)}
 				</span>
 			</div>
@@ -92,9 +104,9 @@ export default function ProvisionsGrowthChart({ data = [] }) {
 				/>
 				<line
 					x1={PAD.left}
-					y1={geom.baseY}
+					y1={geom.zeroY}
 					x2={W - PAD.right}
-					y2={geom.baseY}
+					y2={geom.zeroY}
 					stroke="#334155"
 					strokeWidth="1"
 				/>
@@ -109,7 +121,7 @@ export default function ProvisionsGrowthChart({ data = [] }) {
 				</text>
 				<text
 					x={PAD.left - 8}
-					y={geom.baseY + 4}
+					y={geom.zeroY + 4}
 					textAnchor="end"
 					fontSize="11"
 					fill="#64748b"

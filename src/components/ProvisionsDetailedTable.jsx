@@ -39,13 +39,12 @@ export default function ProvisionsDetailedTable({ data = [] }) {
 				</thead>
 				<tbody className="divide-y divide-slate-700">
 					{data.map((row) => {
-						// Las provisiones son alcancías: el saldo "Por usar" nunca baja de 0
-						// (el efecto derrame absorbe el excedente en las maestras).
-						const saldoVisible = Math.max(
-							0,
-							row.savedCents - row.usedCents,
-						);
-						const enCero = saldoVisible <= 0;
+						// "Por usar" SÍ puede quedar negativo: un gasto contra este rubro
+						// puede dejarse en negativo sin sobre de respaldo (ver
+						// ExpenseModal, modo "Dejar el sobre en negativo").
+						const saldoVisible = row.savedCents - row.usedCents;
+						const enNegativo = saldoVisible < 0;
+						const enCero = saldoVisible === 0;
 						return (
 							<tr key={row.label}>
 								<td className="px-3 py-2.5 text-left text-slate-100">
@@ -64,7 +63,13 @@ export default function ProvisionsDetailedTable({ data = [] }) {
 									{formatCents(row.usedCents)}
 								</td>
 								<td
-									className={`${td} ${enCero ? "text-slate-500" : "text-slate-100"}`}
+									className={`${td} ${
+										enNegativo
+											? "text-rose-400"
+											: enCero
+												? "text-slate-500"
+												: "text-slate-100"
+									}`}
 								>
 									{formatCents(saldoVisible)}
 								</td>

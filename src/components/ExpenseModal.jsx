@@ -54,6 +54,12 @@ export default function ExpenseModal({
 	const [concept, setConcept] = useState("");
 	const [effectiveDate, setEffectiveDate] = useState(todayISO());
 	const [fallbackId, setFallbackId] = useState("");
+	// Preferencia del usuario ante un sobregiro: "fallback" (cubrir desde otro
+	// sobre) o "negative" (dejar el sobre elegido en negativo). Se deriva el
+	// modo EFECTIVO más abajo (mismo patrón que `effectiveFallback`): si no
+	// hay ningún sobre con saldo para cubrir el faltante, "fallback" no es una
+	// opción real y se usa "negative" sin que el usuario quede sin salida.
+	const [overdraftModeChoice, setOverdraftModeChoice] = useState("fallback");
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [error, setError] = useState(null);
 
@@ -129,6 +135,15 @@ export default function ExpenseModal({
 			? fallbackId
 			: (fallbackOptions[0]?.value ?? "");
 
+	// Modo efectivo: si no hay ningún sobre con saldo, "fallback" queda
+	// forzado a "negative" (antes esto era un callejón sin salida). Si sí hay
+	// opciones, respeta lo que el usuario haya elegido (por defecto "fallback",
+	// igual que el comportamiento previo a este cambio).
+	const overdraftMode =
+		overdraftModeChoice === "fallback" && fallbackOptions.length === 0
+			? "negative"
+			: overdraftModeChoice;
+
 	useEffect(() => {
 		if (!open) return;
 		setSelection((prev) => prev || selectable[0]?.id || "");
@@ -151,6 +166,7 @@ export default function ExpenseModal({
 		setConcept("");
 		setEffectiveDate(todayISO());
 		setFallbackId("");
+		setOverdraftModeChoice("fallback");
 		setError(null);
 		onClose();
 	}
@@ -171,7 +187,7 @@ export default function ExpenseModal({
 			setError("Selecciona una fecha válida.");
 			return;
 		}
-		if (isOverdraft && !effectiveFallback) {
+		if (isOverdraft && overdraftMode === "fallback" && !effectiveFallback) {
 			setError("Elige un sobre con saldo para cubrir el faltante.");
 			return;
 		}
@@ -193,7 +209,10 @@ export default function ExpenseModal({
 			body.category_id = selection;
 			body.label = selectedCategory?.name ?? selection;
 		}
-		if (isOverdraft) {
+		// Modo "negative": no se manda ningún fallback_* -> el backend toma el
+		// "camino simple" (src/pages/api/expense.js) e inserta el gasto completo
+		// sin chequear saldo, dejando el sobre en negativo.
+		if (isOverdraft && overdraftMode === "fallback") {
 			if (effectiveFallback.startsWith(PI_PREFIX)) {
 				body.fallback_provision_item_id = effectiveFallback.slice(
 					PI_PREFIX.length,
@@ -376,7 +395,38 @@ export default function ExpenseModal({
 								Este gasto supera el saldo disponible. Faltan{" "}
 								<span className="font-mono">{formatCents(shortfallCents)}</span>.
 							</p>
-							{fallbackOptions.length > 0 ? (
+
+							<div className="space-y-1.5">
+								<label className="flex items-center gap-2 text-xs text-amber-200">
+									<input
+										type="radio"
+										name="overdraft-mode"
+										checked={overdraftMode === "fallback"}
+										onChange={() => setOverdraftModeChoice("fallback")}
+										disabled={fallbackOptions.length === 0}
+										className="accent-amber-500 disabled:opacity-40"
+									/>
+									Cubrir el faltante desde otro sobre
+								</label>
+								<label className="flex items-center gap-2 text-xs text-amber-200">
+									<input
+										type="radio"
+										name="overdraft-mode"
+										checked={overdraftMode === "negative"}
+										onChange={() => setOverdraftModeChoice("negative")}
+										className="accent-amber-500"
+									/>
+									Dejar el sobre en negativo
+								</label>
+							</div>
+
+							{fallbackOptions.length === 0 && (
+								<p className="text-[11px] text-amber-400/80">
+									No hay ningún sobre con saldo disponible para cubrirlo.
+								</p>
+							)}
+
+							{overdraftMode === "fallback" ? (
 								<label className="block space-y-1">
 									<span className="text-[11px] uppercase tracking-wider text-amber-400/80">
 										Cubrir el faltante desde
@@ -394,8 +444,12 @@ export default function ExpenseModal({
 									</select>
 								</label>
 							) : (
-								<p className="text-[11px] text-amber-400/80">
-									No hay ningún sobre con saldo disponible para cubrirlo.
+								<p className="text-[11px] text-amber-300">
+									{displayName || "Este sobre"} quedará en{" "}
+									<span className="font-mono font-semibold text-rose-400">
+										{formatCents(availableCents - amountCents)}
+									</span>
+									.
 								</p>
 							)}
 						</div>
