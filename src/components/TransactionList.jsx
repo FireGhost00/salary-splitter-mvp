@@ -13,6 +13,9 @@ const MONTHS_ES_LONG = [
 /** Cuántos movimientos por página en el paginador. */
 const PAGE_SIZE = 10;
 
+/** Orden estable para el <select> de sobre; solo estos 3 son reclasificables. */
+const MASTER_ORDER = ["Necesidad", "Deseo", "Ahorro"];
+
 function toDate(iso) {
 	if (!iso) return null;
 	const d = new Date(iso);
@@ -39,10 +42,14 @@ function monthKeyOf(iso) {
  * (CONVENCIONES.md §2). Verde = ingreso, rojo = gasto. Cada fila puede borrarse
  * (DELETE /api/delete-transaction) y se quita del estado local sin recargar.
  *
- * Un gasto contra un sobre maestro (Necesidad/Deseo/Ahorro) puede asignar,
- * cambiar o quitar su subcategoría con un <select> inline (guardado inmediato,
- * PATCH /api/update-transaction-subcategory), sin recargar la página. Deuda y
- * Provisiones no tienen subcategorías en este modelo -> no muestran el control.
+ * Un gasto contra un sobre maestro (Necesidad/Deseo/Ahorro) puede reclasificarse
+ * inline: cambiar de sobre y/o asignar, cambiar o quitar su subcategoría
+ * (guardado inmediato, PATCH /api/reclassify-transaction), sin recargar la
+ * página. Deuda y Provisiones no se reclasifican con este control. Mover un
+ * gasto de sobre desplaza saldo disponible retroactivamente entre ambos —
+ * es el efecto buscado. Los demás paneles de la página (calculados en el
+ * servidor: gráficas, saldos) no se recalculan en memoria; reflejan el
+ * cambio en el próximo fetch/recarga, igual que ya pasa hoy al borrar.
  *
  * Encima de la tabla: filtro mensual + filtro por tipo. Debajo: paginador simple
  * (PAGE_SIZE por página), que solo aparece si hay más de una página.
@@ -59,14 +66,29 @@ function monthKeyOf(iso) {
  *     effective_date?: string | null,
  *     subcategory?: string | null,
  *   }>,
+ *   categories?: { name: string, macro_type?: string }[],
  *   subcategories?: { name: string, parentMaster: string }[],
  * }} props
  */
-export default function TransactionList({ transactions = [], subcategories = [] }) {
+export default function TransactionList({
+	transactions = [],
+	categories = [],
+	subcategories = [],
+}) {
 	const [rows, setRows] = useState(transactions);
 	const [deletingId, setDeletingId] = useState(null);
-	const [savingSubcategoryId, setSavingSubcategoryId] = useState(null);
-	const [subcategoryErrors, setSubcategoryErrors] = useState({});
+	const [savingRowId, setSavingRowId] = useState(null);
+	const [rowErrors, setRowErrors] = useState({});
+
+	// Los 3 sobres reclasificables (macro_type "estandar" -> Necesidad/Deseo/
+	// Ahorro; Deuda/Provisiones nunca lo son, ver src/lib/budget.js), en un
+	// orden estable para el <select>.
+	const masterNames = useMemo(() => {
+		const present = new Set(
+			categories.filter((c) => c.macro_type === "estandar").map((c) => c.name),
+		);
+		return MASTER_ORDER.filter((name) => present.has(name));
+	}, [categories]);
 
 	// Nombres de subcategoría disponibles por sobre maestro (parentMaster).
 	// Solo Necesidad/Deseo/Ahorro tienen entradas aquí (ver src/lib/budget.js).
@@ -79,48 +101,51 @@ export default function TransactionList({ transactions = [], subcategories = [] 
 		return map;
 	}, [subcategories]);
 
-	function isSubcategoryEditable(tx) {
-		return (
-			tx.transaction_type === "gasto" &&
-			(subcategoriesByMaster[tx.category_id]?.length ?? 0) > 0
-		);
+	function isReclassifiable(tx) {
+		return tx.transaction_type === "gasto" && masterNames.includes(tx.category_id);
 	}
 
-	// Guardado inmediato al cambiar el <select>; actualiza `rows` sin recargar
-	// (mismo criterio que confirmDelete). El <select> es controlado por
-	// tx.subcategory, así que un error simplemente lo deja como estaba.
-	async function updateSubcategory(id, subcategory) {
-		if (savingSubcategoryId != null) return;
-		setSavingSubcategoryId(id);
-		setSubcategoryErrors((prev) => ({ ...prev, [id]: null }));
+	// Guardado inmediato al cambiar cualquiera de los dos <select>; actualiza
+	// `rows` sin recargar (mismo criterio que confirmDelete). `patch` trae
+	// SOLO el campo que cambió (category_id o subcategory) -- el endpoint
+	// acepta uno u otro por separado y resuelve el resto (p. ej. limpia la
+	// subcategoría si el sobre cambia sin una nueva).
+	async function reclassify(id, patch) {
+		if (savingRowId != null) return;
+		setSavingRowId(id);
+		setRowErrors((prev) => ({ ...prev, [id]: null }));
 		try {
-			const response = await fetch("/api/update-transaction-subcategory", {
+			const response = await fetch("/api/reclassify-transaction", {
 				method: "PATCH",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ id, subcategory }),
+				body: JSON.stringify({ id, ...patch }),
 			});
 			const payload = await response.json().catch(() => ({}));
 			if (response.ok) {
 				setRows((prev) =>
 					prev.map((tx) =>
 						tx.id === id
-							? { ...tx, subcategory: payload.transaction?.subcategory ?? null }
+							? {
+									...tx,
+									category_id: payload.transaction?.category_id ?? tx.category_id,
+									subcategory: payload.transaction?.subcategory ?? null,
+								}
 							: tx,
 					),
 				);
 			} else {
-				setSubcategoryErrors((prev) => ({
+				setRowErrors((prev) => ({
 					...prev,
 					[id]: payload.error ?? `Error ${response.status}.`,
 				}));
 			}
 		} catch {
-			setSubcategoryErrors((prev) => ({
+			setRowErrors((prev) => ({
 				...prev,
 				[id]: "No se pudo conectar con el servidor.",
 			}));
 		} finally {
-			setSavingSubcategoryId(null);
+			setSavingRowId(null);
 		}
 	}
 
@@ -277,27 +302,49 @@ export default function TransactionList({ transactions = [], subcategories = [] 
 										{formatDate(tx.created_at ?? tx.effective_date)}
 									</p>
 
-									{isSubcategoryEditable(tx) && (
+									{isReclassifiable(tx) && (
 										<div className="mt-1.5 flex flex-wrap items-center gap-1.5">
 											<select
-												value={tx.subcategory ?? ""}
+												value={tx.category_id ?? ""}
 												onChange={(e) =>
-													updateSubcategory(tx.id, e.target.value || null)
+													reclassify(tx.id, { category_id: e.target.value })
 												}
-												disabled={savingSubcategoryId === tx.id}
-												aria-label={`Subcategoría de ${tx.description || tx.label || tx.category_id}`}
+												disabled={savingRowId === tx.id}
+												aria-label={`Sobre de ${tx.description || tx.label || tx.category_id}`}
 												className="rounded-md border border-slate-700 bg-slate-900 px-1.5 py-0.5 text-[11px] text-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
 											>
-												<option value="">Sin subcategoría</option>
-												{subcategoriesByMaster[tx.category_id]?.map((name) => (
-													<option key={name} value={name}>
-														{name}
+												{masterNames.map((masterName) => (
+													<option key={masterName} value={masterName}>
+														{masterName}
 													</option>
 												))}
 											</select>
-											{subcategoryErrors[tx.id] && (
-												<span className="text-[10px] text-rose-400">
-													{subcategoryErrors[tx.id]}
+
+											{(subcategoriesByMaster[tx.category_id]?.length ?? 0) >
+												0 && (
+												<select
+													value={tx.subcategory ?? ""}
+													onChange={(e) =>
+														reclassify(tx.id, {
+															subcategory: e.target.value || null,
+														})
+													}
+													disabled={savingRowId === tx.id}
+													aria-label={`Subcategoría de ${tx.description || tx.label || tx.category_id}`}
+													className="rounded-md border border-slate-700 bg-slate-900 px-1.5 py-0.5 text-[11px] text-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+												>
+													<option value="">Sin subcategoría</option>
+													{subcategoriesByMaster[tx.category_id]?.map((name) => (
+														<option key={name} value={name}>
+															{name}
+														</option>
+													))}
+												</select>
+											)}
+
+											{rowErrors[tx.id] && (
+												<span className="basis-full text-[10px] text-rose-400">
+													{rowErrors[tx.id]}
 												</span>
 											)}
 										</div>
