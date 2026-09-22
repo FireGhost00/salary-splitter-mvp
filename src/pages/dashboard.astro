@@ -214,7 +214,7 @@ const dashCategories = (categoryRows ?? [])
 // Transacciones del mes en curso (para el panel de categorías).
 const { data: monthTransactions, error: monthTxError } = await supabase
 	.from("transactions")
-	.select("category_id, amount_cents, transaction_type")
+	.select("category_id, amount_cents, transaction_type, subcategory")
 	.eq("user_id", user.id)
 	.gte("effective_date", monthStartISO)
 	.lte("effective_date", monthEndISO);

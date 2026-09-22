@@ -24,6 +24,36 @@ function sumByCategory(transactions) {
 	return totals;
 }
 
+/** Sin subcategoría elegida (gasto directo contra el sobre maestro). */
+const SIN_SUBCATEGORIA = "Sin subcategoría";
+
+/**
+ * Gasto del mes por (category_id maestro, subcategory). Solo transaction_type
+ * 'gasto' (no ingresos); monto en magnitud positiva (cuánto se gastó, no el
+ * saldo neto). Las filas sin subcategory -> "Sin subcategoría", nunca se
+ * pierden del total.
+ *
+ * @param {{ category_id: string | null, amount_cents: number, transaction_type: string, subcategory?: string | null }[]} transactions
+ * @returns {Record<string, Record<string, number>>} category_id -> { subLabel: cents }
+ */
+function sumExpensesBySubcategory(transactions) {
+	const totals = {};
+	for (const tx of transactions) {
+		if (tx.transaction_type !== "gasto") continue;
+		const categoryId = tx.category_id;
+		if (categoryId == null) continue;
+		const cents = Math.abs(Number(tx.amount_cents || 0));
+		if (cents === 0) continue;
+		const subLabel =
+			typeof tx.subcategory === "string" && tx.subcategory.trim() !== ""
+				? tx.subcategory.trim()
+				: SIN_SUBCATEGORIA;
+		const bySub = totals[categoryId] ?? (totals[categoryId] = {});
+		bySub[subLabel] = (bySub[subLabel] ?? 0) + cents;
+	}
+	return totals;
+}
+
 /**
  * Panel de categorías dinámicas: barras horizontales de progreso, Modo Oscuro,
  * agrupadas por macro_type (Deudas -> Provisiones -> Estándar). Sin gráficas
@@ -49,6 +79,24 @@ export default function DashboardCharts({ categories = [], transactions = [] }) 
 		const maxAbs = Math.max(1, ...rows.map((r) => Math.abs(r.amountCents)));
 		return { ...g, rows, maxAbs };
 	}).filter((g) => g.rows.length > 0);
+
+	// Desglose de gasto por subcategoría, solo para los sobres 'estandar'
+	// (Necesidad/Deseo/Ahorro): son los únicos con subcategorías reales
+	// (Deuda/Provisiones no las tienen, ver src/lib/budget.js).
+	const expensesBySubcategory = sumExpensesBySubcategory(transactions);
+	const subcategoryBreakdown = (
+		groups.find((g) => g.key === "estandar")?.rows ?? []
+	)
+		.map((row) => {
+			const bySub = expensesBySubcategory[row.name] ?? {};
+			const items = Object.entries(bySub)
+				.map(([label, amountCents]) => ({ label, amountCents }))
+				.sort((a, b) => b.amountCents - a.amountCents);
+			const totalCents = items.reduce((sum, it) => sum + it.amountCents, 0);
+			const maxItem = Math.max(1, ...items.map((it) => it.amountCents));
+			return { envelope: row.name, items, totalCents, maxItem };
+		})
+		.filter((e) => e.items.length > 0);
 
 	if (groups.length === 0) {
 		return (
@@ -105,6 +153,51 @@ export default function DashboardCharts({ categories = [], transactions = [] }) 
 					</ul>
 				</section>
 			))}
+
+			{subcategoryBreakdown.length > 0 && (
+				<section className="space-y-4 border-t border-slate-700 pt-4">
+					<h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+						Gasto por subcategoría
+					</h3>
+
+					{subcategoryBreakdown.map((envelope) => (
+						<div key={envelope.envelope} className="space-y-2">
+							<div className="flex items-baseline justify-between gap-3 text-sm">
+								<span className="text-slate-100">{envelope.envelope}</span>
+								<span className="font-mono text-xs tabular-nums text-slate-400">
+									{formatCents(envelope.totalCents)}
+								</span>
+							</div>
+
+							<ul className="space-y-2">
+								{envelope.items.map((item) => {
+									const pct = Math.round(
+										(item.amountCents / envelope.maxItem) * 100,
+									);
+									return (
+										<li key={item.label} className="space-y-1">
+											<div className="flex items-baseline justify-between gap-3 text-xs">
+												<span className="min-w-0 truncate text-slate-300">
+													{item.label}
+												</span>
+												<span className="shrink-0 font-mono tabular-nums text-slate-300">
+													{formatCents(item.amountCents)}
+												</span>
+											</div>
+											<div className="h-2 w-full overflow-hidden rounded-full bg-slate-700">
+												<div
+													className="h-2 rounded-full bg-indigo-500"
+													style={{ width: `${pct}%` }}
+												/>
+											</div>
+										</li>
+									);
+								})}
+							</ul>
+						</div>
+					))}
+				</section>
+			)}
 		</div>
 	);
 }
