@@ -45,7 +45,7 @@ async function handleGET(context) {
 	const { data: txRows, error: txError } = await supabase
 		.from("transactions")
 		.select(
-			"id, group_id, category_id, description, label, amount_cents, transaction_type, created_at, effective_date",
+			"id, group_id, category_id, description, label, amount_cents, transaction_type, created_at, effective_date, subcategory",
 		)
 		.eq("user_id", user.id)
 		.order("created_at", { ascending: false })
@@ -60,11 +60,16 @@ async function handleGET(context) {
 
 	const nameById = new Map((catRows ?? []).map((c) => [String(c.id), c.name]));
 
+	// `category` (resuelto) se conserva para no romper a quien ya lo consume;
+	// `category_id` (crudo) y `subcategory` son nuevos -- los usa el control de
+	// reclasificar de TransactionHistory.jsx (PATCH /api/reclassify-transaction).
 	const transactions = (txRows ?? []).map((tx) => ({
 		id: tx.id,
 		group_id: tx.group_id ?? null,
 		category:
 			nameById.get(String(tx.category_id)) ?? tx.category_id ?? "Sin categoría",
+		category_id: tx.category_id,
+		subcategory: tx.subcategory ?? null,
 		description: tx.description,
 		label: tx.label,
 		amount_cents: Number(tx.amount_cents ?? 0),

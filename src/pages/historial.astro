@@ -2,6 +2,7 @@
 import BaseLayout from "../layouts/BaseLayout.astro";
 import TransactionHistory from "../components/TransactionHistory.jsx";
 import { createSupabaseServerClient } from "../lib/supabase.js";
+import { isSubcategory, parentMasterOf } from "../lib/budget.js";
 
 // Ruta on-demand: requiere sesión.
 export const prerender = false;
@@ -23,7 +24,7 @@ const PAGE_SIZE = 20;
 const { data: txRows, error: txError } = await supabase
 	.from("transactions")
 	.select(
-		"id, group_id, category_id, description, label, amount_cents, transaction_type, created_at, effective_date",
+		"id, group_id, category_id, description, label, amount_cents, transaction_type, created_at, effective_date, subcategory",
 	)
 	.eq("user_id", user.id)
 	.order("created_at", { ascending: false })
@@ -35,9 +36,11 @@ if (txError) {
 
 // "JOIN" con categories para el nombre real. En esta rama `transactions.category_id`
 // normalmente YA es el nombre; el mapa resuelve el caso en que sea un UUID.
+// También sirve para armar el control de reclasificar (mismo criterio que
+// dashboard.astro): los 3 sobres maestros + las subcategorías del usuario.
 const { data: catRows, error: catError } = await supabase
 	.from("categories")
-	.select("id, name")
+	.select("id, name, macro_type")
 	.eq("user_id", user.id);
 
 if (catError) {
@@ -51,6 +54,9 @@ const transactions = (txRows ?? []).map((tx) => ({
 	group_id: tx.group_id ?? null,
 	category:
 		nameById.get(String(tx.category_id)) ?? tx.category_id ?? "Sin categoría",
+	// Crudo (no resuelto): lo que espera PATCH /api/reclassify-transaction.
+	category_id: tx.category_id,
+	subcategory: tx.subcategory ?? null,
 	description: tx.description,
 	label: tx.label,
 	amount_cents: Number(tx.amount_cents ?? 0),
@@ -58,6 +64,14 @@ const transactions = (txRows ?? []).map((tx) => ({
 	created_at: tx.created_at,
 	effective_date: tx.effective_date,
 }));
+
+const categoriesForReclassify = (catRows ?? [])
+	.filter((row) => !isSubcategory(row))
+	.map((row) => ({ name: row.name, macro_type: row.macro_type ?? "estandar" }));
+
+const subcategoriesForReclassify = (catRows ?? [])
+	.filter((row) => isSubcategory(row))
+	.map((row) => ({ name: row.name, parentMaster: parentMasterOf(row.macro_type) }));
 ---
 
 <BaseLayout title="Historial · SalarySplitter">
@@ -77,6 +91,11 @@ const transactions = (txRows ?? []).map((tx) => ({
 			</a>
 		</header>
 
-		<TransactionHistory client:load transactions={transactions} />
+		<TransactionHistory
+			client:load
+			transactions={transactions}
+			categories={categoriesForReclassify}
+			subcategories={subcategoriesForReclassify}
+		/>
 	</main>
 </BaseLayout>

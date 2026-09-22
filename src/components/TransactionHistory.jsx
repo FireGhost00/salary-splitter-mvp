@@ -1,5 +1,11 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { formatCents } from "../lib/money";
+import {
+	deriveMasterNames,
+	deriveSubcategoriesByMaster,
+	isReclassifiableExpense,
+	useReclassifyTransaction,
+} from "../lib/reclassify.js";
 
 /** Debe coincidir con PAGE_SIZE de /api/get-history. */
 const PAGE_SIZE = 20;
@@ -123,9 +129,18 @@ function processRows(transactions) {
 	return out;
 }
 
-function Row({ tx, onDelete }) {
+function Row({
+	tx,
+	onDelete,
+	masterNames,
+	subcategoriesByMaster,
+	reclassify,
+	savingRowId,
+	rowErrors,
+}) {
 	const positive = isPositive(tx);
 	const title = tx.description || tx.label || tx.category || "Movimiento";
+	const reclassifiable = isReclassifiableExpense(tx, masterNames);
 	return (
 		<li className="flex items-center justify-between gap-3 px-4 py-3">
 			<div className="min-w-0">
@@ -134,6 +149,51 @@ function Row({ tx, onDelete }) {
 					{tx.category}
 					{tx.created_at ? ` · ${timeLabel(tx.created_at)}` : ""}
 				</p>
+
+				{reclassifiable && (
+					<div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+						<select
+							value={tx.category_id ?? ""}
+							onChange={(e) =>
+								reclassify(tx.id, { category_id: e.target.value })
+							}
+							disabled={savingRowId === tx.id}
+							aria-label={`Sobre de ${title}`}
+							className="rounded-md border border-slate-700 bg-slate-900 px-1.5 py-0.5 text-[11px] text-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+						>
+							{masterNames.map((masterName) => (
+								<option key={masterName} value={masterName}>
+									{masterName}
+								</option>
+							))}
+						</select>
+
+						{(subcategoriesByMaster[tx.category_id]?.length ?? 0) > 0 && (
+							<select
+								value={tx.subcategory ?? ""}
+								onChange={(e) =>
+									reclassify(tx.id, { subcategory: e.target.value || null })
+								}
+								disabled={savingRowId === tx.id}
+								aria-label={`Subcategoría de ${title}`}
+								className="rounded-md border border-slate-700 bg-slate-900 px-1.5 py-0.5 text-[11px] text-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+							>
+								<option value="">Sin subcategoría</option>
+								{subcategoriesByMaster[tx.category_id]?.map((name) => (
+									<option key={name} value={name}>
+										{name}
+									</option>
+								))}
+							</select>
+						)}
+
+						{rowErrors[tx.id] && (
+							<span className="basis-full text-[10px] text-rose-400">
+								{rowErrors[tx.id]}
+							</span>
+						)}
+					</div>
+				)}
 			</div>
 			<div className="flex shrink-0 items-center gap-3">
 				<span
@@ -192,13 +252,33 @@ function GroupRow({ group, onDelete }) {
  * pertenece a un ingreso, se abre el modal de confirmación y se elimina el
  * ingreso GLOBAL completo (todas las filas con ese `group_id`).
  *
- * @param {{ transactions: Array<object> }} props
+ * Un gasto contra un sobre maestro (Necesidad/Deseo/Ahorro) puede
+ * reclasificarse inline (sobre y/o subcategoría), guardado inmediato sin
+ * recargar -- misma lógica que TransactionList.jsx, compartida vía
+ * src/lib/reclassify.js para no mantener dos copias.
+ *
+ * @param {{
+ *   transactions: Array<object>,
+ *   categories?: { name: string, macro_type?: string }[],
+ *   subcategories?: { name: string, parentMaster: string }[],
+ * }} props
  */
-export default function TransactionHistory({ transactions = [] }) {
+export default function TransactionHistory({
+	transactions = [],
+	categories = [],
+	subcategories = [],
+}) {
 	const [rows, setRows] = useState(transactions);
 	const [page, setPage] = useState(1);
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState(null);
+
+	const masterNames = useMemo(() => deriveMasterNames(categories), [categories]);
+	const subcategoriesByMaster = useMemo(
+		() => deriveSubcategoriesByMaster(subcategories),
+		[subcategories],
+	);
+	const { reclassify, savingRowId, rowErrors } = useReclassifyTransaction(setRows);
 
 	// PASO 2: modal de confirmación en React (diálogo propio).
 	// `groupToDelete` = ref de lo que se borra:
@@ -324,6 +404,11 @@ export default function TransactionHistory({ transactions = [] }) {
 													},
 												)
 											}
+											masterNames={masterNames}
+											subcategoriesByMaster={subcategoriesByMaster}
+											reclassify={reclassify}
+											savingRowId={savingRowId}
+											rowErrors={rowErrors}
 										/>
 									),
 								)}

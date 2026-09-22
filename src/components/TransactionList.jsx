@@ -1,5 +1,11 @@
 import { useMemo, useState } from "react";
 import { formatCents } from "../lib/money";
+import {
+	deriveMasterNames,
+	deriveSubcategoriesByMaster,
+	isReclassifiableExpense,
+	useReclassifyTransaction,
+} from "../lib/reclassify.js";
 
 const MONTHS_ES = [
 	"ene", "feb", "mar", "abr", "may", "jun",
@@ -12,9 +18,6 @@ const MONTHS_ES_LONG = [
 
 /** Cuántos movimientos por página en el paginador. */
 const PAGE_SIZE = 10;
-
-/** Orden estable para el <select> de sobre; solo estos 3 son reclasificables. */
-const MASTER_ORDER = ["Necesidad", "Deseo", "Ahorro"];
 
 function toDate(iso) {
 	if (!iso) return null;
@@ -77,76 +80,19 @@ export default function TransactionList({
 }) {
 	const [rows, setRows] = useState(transactions);
 	const [deletingId, setDeletingId] = useState(null);
-	const [savingRowId, setSavingRowId] = useState(null);
-	const [rowErrors, setRowErrors] = useState({});
 
-	// Los 3 sobres reclasificables (macro_type "estandar" -> Necesidad/Deseo/
-	// Ahorro; Deuda/Provisiones nunca lo son, ver src/lib/budget.js), en un
-	// orden estable para el <select>.
-	const masterNames = useMemo(() => {
-		const present = new Set(
-			categories.filter((c) => c.macro_type === "estandar").map((c) => c.name),
-		);
-		return MASTER_ORDER.filter((name) => present.has(name));
-	}, [categories]);
-
-	// Nombres de subcategoría disponibles por sobre maestro (parentMaster).
-	// Solo Necesidad/Deseo/Ahorro tienen entradas aquí (ver src/lib/budget.js).
-	const subcategoriesByMaster = useMemo(() => {
-		const map = {};
-		for (const s of subcategories) {
-			if (!s?.parentMaster || !s?.name) continue;
-			(map[s.parentMaster] ??= []).push(s.name);
-		}
-		return map;
-	}, [subcategories]);
+	// Lógica de reclasificación compartida con TransactionHistory.jsx
+	// (src/lib/reclassify.js): mismo criterio, sin dos copias que puedan
+	// desincronizarse.
+	const masterNames = useMemo(() => deriveMasterNames(categories), [categories]);
+	const subcategoriesByMaster = useMemo(
+		() => deriveSubcategoriesByMaster(subcategories),
+		[subcategories],
+	);
+	const { reclassify, savingRowId, rowErrors } = useReclassifyTransaction(setRows);
 
 	function isReclassifiable(tx) {
-		return tx.transaction_type === "gasto" && masterNames.includes(tx.category_id);
-	}
-
-	// Guardado inmediato al cambiar cualquiera de los dos <select>; actualiza
-	// `rows` sin recargar (mismo criterio que confirmDelete). `patch` trae
-	// SOLO el campo que cambió (category_id o subcategory) -- el endpoint
-	// acepta uno u otro por separado y resuelve el resto (p. ej. limpia la
-	// subcategoría si el sobre cambia sin una nueva).
-	async function reclassify(id, patch) {
-		if (savingRowId != null) return;
-		setSavingRowId(id);
-		setRowErrors((prev) => ({ ...prev, [id]: null }));
-		try {
-			const response = await fetch("/api/reclassify-transaction", {
-				method: "PATCH",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ id, ...patch }),
-			});
-			const payload = await response.json().catch(() => ({}));
-			if (response.ok) {
-				setRows((prev) =>
-					prev.map((tx) =>
-						tx.id === id
-							? {
-									...tx,
-									category_id: payload.transaction?.category_id ?? tx.category_id,
-									subcategory: payload.transaction?.subcategory ?? null,
-								}
-							: tx,
-					),
-				);
-			} else {
-				setRowErrors((prev) => ({
-					...prev,
-					[id]: payload.error ?? `Error ${response.status}.`,
-				}));
-			}
-		} catch {
-			setRowErrors((prev) => ({
-				...prev,
-				[id]: "No se pudo conectar con el servidor.",
-			}));
-		} finally {
-			setSavingRowId(null);
-		}
+		return isReclassifiableExpense(tx, masterNames);
 	}
 
 	// Modal de confirmación en React (diálogo propio, sin diálogos nativos).
