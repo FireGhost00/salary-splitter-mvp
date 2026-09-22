@@ -11,7 +11,7 @@ import {
 // alcance de esta suite (environment: "node").
 
 describe("deriveMasterNames", () => {
-	it("filtra por macro_type 'estandar' y ordena Necesidad, Deseo, Ahorro", () => {
+	it("detecta los 3 nombres canónicos por presencia y los ordena Necesidad, Deseo, Ahorro", () => {
 		const categories = [
 			{ name: "Ahorro", macro_type: "estandar" },
 			{ name: "Deuda", macro_type: "deuda" },
@@ -29,6 +29,50 @@ describe("deriveMasterNames", () => {
 	it("solo devuelve los masters realmente presentes", () => {
 		const categories = [{ name: "Deseo", macro_type: "estandar" }];
 		expect(deriveMasterNames(categories)).toEqual(["Deseo"]);
+	});
+
+	// Regresión: cuentas sembradas antes de la convención macro_type
+	// "estandar", o por un camino de siembra distinto (p. ej. la RPC legacy
+	// crear_categorias_defecto), pueden tener las filas maestras con
+	// macro_type ausente, vacío o distinto -- deben seguir siendo
+	// reclasificables con solo el nombre presente.
+	it("[regresión] macro_type ausente en la fila maestra -> sigue detectándose por nombre", () => {
+		const categories = [
+			{ name: "Necesidad" },
+			{ name: "Deseo" },
+			{ name: "Ahorro" },
+		];
+		expect(deriveMasterNames(categories)).toEqual([
+			"Necesidad",
+			"Deseo",
+			"Ahorro",
+		]);
+	});
+
+	it("[regresión] macro_type vacío o null en la fila maestra -> sigue detectándose por nombre", () => {
+		const categories = [
+			{ name: "Necesidad", macro_type: "" },
+			{ name: "Deseo", macro_type: null },
+			{ name: "Ahorro", macro_type: undefined },
+		];
+		expect(deriveMasterNames(categories)).toEqual([
+			"Necesidad",
+			"Deseo",
+			"Ahorro",
+		]);
+	});
+
+	it("[regresión] macro_type distinto de 'estandar' en la fila maestra -> sigue detectándose por nombre", () => {
+		const categories = [
+			{ name: "Necesidad", macro_type: "fijo" },
+			{ name: "Deseo", macro_type: "gasto" },
+			{ name: "Ahorro", macro_type: "ahorro" },
+		];
+		expect(deriveMasterNames(categories)).toEqual([
+			"Necesidad",
+			"Deseo",
+			"Ahorro",
+		]);
 	});
 
 	it("sin categorías -> []", () => {

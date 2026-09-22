@@ -1,20 +1,29 @@
 import { useState } from "react";
-
-/** Orden estable para el <select> de sobre; solo estos 3 son reclasificables. */
-export const MASTER_ORDER = ["Necesidad", "Deseo", "Ahorro"];
+import { SYS_CAT } from "./budget.js";
 
 /**
- * Los 3 sobres reclasificables presentes para este usuario (macro_type
- * "estandar" -> Necesidad/Deseo/Ahorro; Deuda/Provisiones nunca lo son, ver
- * src/lib/budget.js), en un orden estable.
+ * Orden estable para el <select> de sobre; solo estos 3 son reclasificables.
+ * Nombres canónicos e inamovibles (mismos SYS_CAT que usa el resto de la
+ * app, p. ej. src/pages/api/reclassify-transaction.js).
+ */
+export const MASTER_ORDER = [SYS_CAT.necesidad, SYS_CAT.deseo, SYS_CAT.ahorro];
+
+/**
+ * Los 3 sobres reclasificables presentes para este usuario.
  *
- * @param {{ name: string, macro_type?: string }[]} categories
+ * NO se filtra por `macro_type`: cuentas sembradas antes de la convención
+ * `macro_type: "estandar"` para las categorías maestras (o por un camino de
+ * siembra distinto al actual, p. ej. la RPC legacy `crear_categorias_defecto`)
+ * pueden tener esa columna ausente o con otro valor en la fila de Necesidad/
+ * Deseo/Ahorro, y con el filtro por macro_type quedaban sin ningún <select>
+ * de reclasificación aunque las 3 categorías existieran. Basta con que el
+ * NOMBRE canónico esté presente en `categories`.
+ *
+ * @param {{ name: string }[]} categories
  * @returns {string[]}
  */
 export function deriveMasterNames(categories = []) {
-	const present = new Set(
-		categories.filter((c) => c.macro_type === "estandar").map((c) => c.name),
-	);
+	const present = new Set(categories.map((c) => c?.name));
 	return MASTER_ORDER.filter((name) => present.has(name));
 }
 
