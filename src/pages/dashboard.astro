@@ -309,7 +309,7 @@ const showDeficitBanner = monthIncomeCents > 0 && deficitInfo.deficit;
 const { data: feedRows, error: feedError } = await supabase
 	.from("transactions")
 	.select(
-		"id, category_id, description, label, amount_cents, transaction_type, created_at, effective_date",
+		"id, category_id, description, label, amount_cents, transaction_type, created_at, effective_date, subcategory",
 	)
 	.eq("user_id", user.id)
 	.order("created_at", { ascending: false })
@@ -465,7 +465,11 @@ const deudas = (debtCats ?? []).map((c) => {
 				<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-slate-400">
 					Movimientos
 				</h2>
-				<TransactionList client:load transactions={movimientos} />
+				<TransactionList
+					client:load
+					transactions={movimientos}
+					subcategories={subcategoriesForModal}
+				/>
 			</section>
 		</div>
 

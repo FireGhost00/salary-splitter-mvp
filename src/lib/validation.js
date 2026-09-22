@@ -92,6 +92,17 @@ export const v = {
 		return v.intCents(value, field, opts);
 	},
 
+	/**
+	 * Entero positivo (id de fila, p. ej. `transactions.id`). No es dinero:
+	 * sin el techo de `intCents`, sin coacción de strings.
+	 */
+	positiveInt(value, field) {
+		if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+			fail(`\`${field}\` debe ser un entero positivo.`);
+		}
+		return value;
+	},
+
 	/** String no vacío tras `trim()`. Devuelve el valor recortado. */
 	nonEmptyString(value, field, { maxLen } = {}) {
 		if (typeof value !== "string" || value.trim() === "") {

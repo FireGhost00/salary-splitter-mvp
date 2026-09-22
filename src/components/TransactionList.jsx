@@ -39,23 +39,90 @@ function monthKeyOf(iso) {
  * (CONVENCIONES.md §2). Verde = ingreso, rojo = gasto. Cada fila puede borrarse
  * (DELETE /api/delete-transaction) y se quita del estado local sin recargar.
  *
+ * Un gasto contra un sobre maestro (Necesidad/Deseo/Ahorro) puede asignar,
+ * cambiar o quitar su subcategoría con un <select> inline (guardado inmediato,
+ * PATCH /api/update-transaction-subcategory), sin recargar la página. Deuda y
+ * Provisiones no tienen subcategorías en este modelo -> no muestran el control.
+ *
  * Encima de la tabla: filtro mensual + filtro por tipo. Debajo: paginador simple
  * (PAGE_SIZE por página), que solo aparece si hay más de una página.
  *
- * @param {{ transactions: Array<{
- *   id: number,
- *   category_id: string | null,
- *   description: string | null,
- *   label: string | null,
- *   amount_cents: number,
- *   transaction_type: string,
- *   created_at?: string | null,
- *   effective_date?: string | null,
- * }> }} props
+ * @param {{
+ *   transactions: Array<{
+ *     id: number,
+ *     category_id: string | null,
+ *     description: string | null,
+ *     label: string | null,
+ *     amount_cents: number,
+ *     transaction_type: string,
+ *     created_at?: string | null,
+ *     effective_date?: string | null,
+ *     subcategory?: string | null,
+ *   }>,
+ *   subcategories?: { name: string, parentMaster: string }[],
+ * }} props
  */
-export default function TransactionList({ transactions = [] }) {
+export default function TransactionList({ transactions = [], subcategories = [] }) {
 	const [rows, setRows] = useState(transactions);
 	const [deletingId, setDeletingId] = useState(null);
+	const [savingSubcategoryId, setSavingSubcategoryId] = useState(null);
+	const [subcategoryErrors, setSubcategoryErrors] = useState({});
+
+	// Nombres de subcategoría disponibles por sobre maestro (parentMaster).
+	// Solo Necesidad/Deseo/Ahorro tienen entradas aquí (ver src/lib/budget.js).
+	const subcategoriesByMaster = useMemo(() => {
+		const map = {};
+		for (const s of subcategories) {
+			if (!s?.parentMaster || !s?.name) continue;
+			(map[s.parentMaster] ??= []).push(s.name);
+		}
+		return map;
+	}, [subcategories]);
+
+	function isSubcategoryEditable(tx) {
+		return (
+			tx.transaction_type === "gasto" &&
+			(subcategoriesByMaster[tx.category_id]?.length ?? 0) > 0
+		);
+	}
+
+	// Guardado inmediato al cambiar el <select>; actualiza `rows` sin recargar
+	// (mismo criterio que confirmDelete). El <select> es controlado por
+	// tx.subcategory, así que un error simplemente lo deja como estaba.
+	async function updateSubcategory(id, subcategory) {
+		if (savingSubcategoryId != null) return;
+		setSavingSubcategoryId(id);
+		setSubcategoryErrors((prev) => ({ ...prev, [id]: null }));
+		try {
+			const response = await fetch("/api/update-transaction-subcategory", {
+				method: "PATCH",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ id, subcategory }),
+			});
+			const payload = await response.json().catch(() => ({}));
+			if (response.ok) {
+				setRows((prev) =>
+					prev.map((tx) =>
+						tx.id === id
+							? { ...tx, subcategory: payload.transaction?.subcategory ?? null }
+							: tx,
+					),
+				);
+			} else {
+				setSubcategoryErrors((prev) => ({
+					...prev,
+					[id]: payload.error ?? `Error ${response.status}.`,
+				}));
+			}
+		} catch {
+			setSubcategoryErrors((prev) => ({
+				...prev,
+				[id]: "No se pudo conectar con el servidor.",
+			}));
+		} finally {
+			setSavingSubcategoryId(null);
+		}
+	}
 
 	// Modal de confirmación en React (diálogo propio, sin diálogos nativos).
 	const [isModalOpen, setIsModalOpen] = useState(false);
@@ -209,6 +276,32 @@ export default function TransactionList({ transactions = [] }) {
 										{tx.category_id ?? "Sin categoría"} ·{" "}
 										{formatDate(tx.created_at ?? tx.effective_date)}
 									</p>
+
+									{isSubcategoryEditable(tx) && (
+										<div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+											<select
+												value={tx.subcategory ?? ""}
+												onChange={(e) =>
+													updateSubcategory(tx.id, e.target.value || null)
+												}
+												disabled={savingSubcategoryId === tx.id}
+												aria-label={`Subcategoría de ${tx.description || tx.label || tx.category_id}`}
+												className="rounded-md border border-slate-700 bg-slate-900 px-1.5 py-0.5 text-[11px] text-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+											>
+												<option value="">Sin subcategoría</option>
+												{subcategoriesByMaster[tx.category_id]?.map((name) => (
+													<option key={name} value={name}>
+														{name}
+													</option>
+												))}
+											</select>
+											{subcategoryErrors[tx.id] && (
+												<span className="text-[10px] text-rose-400">
+													{subcategoryErrors[tx.id]}
+												</span>
+											)}
+										</div>
+									)}
 								</div>
 
 								<div className="flex shrink-0 items-center gap-3">

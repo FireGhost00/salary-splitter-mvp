@@ -92,6 +92,27 @@ describe("v.optionalIntCents", () => {
 	});
 });
 
+describe("v.positiveInt", () => {
+	it("acepta enteros positivos", () => {
+		expect(v.positiveInt(1, "id")).toBe(1);
+		expect(v.positiveInt(42, "id")).toBe(42);
+	});
+	it("rechaza 0, negativos, floats y strings", () => {
+		throws(() => v.positiveInt(0, "id"));
+		throws(() => v.positiveInt(-1, "id"));
+		throws(() => v.positiveInt(1.5, "id"));
+		throws(() => v.positiveInt("1", "id"));
+	});
+	it("rechaza NaN / null / undefined", () => {
+		throws(() => v.positiveInt(Number.NaN, "id"));
+		throws(() => v.positiveInt(null, "id"));
+		throws(() => v.positiveInt(undefined, "id"));
+	});
+	it("no tiene techo int4 (a diferencia de intCents)", () => {
+		expect(v.positiveInt(INT4_MAX + 100, "id")).toBe(INT4_MAX + 100);
+	});
+});
+
 describe("v.nonEmptyString", () => {
 	it("recorta y devuelve", () => {
 		expect(v.nonEmptyString("  Alquiler  ", "name")).toBe("Alquiler");
