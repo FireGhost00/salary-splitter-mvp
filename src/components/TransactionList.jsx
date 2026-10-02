@@ -71,12 +71,14 @@ function monthKeyOf(iso) {
  *   }>,
  *   categories?: { name: string, macro_type?: string }[],
  *   subcategories?: { name: string, parentMaster: string }[],
+ *   initialMonthFilter?: string | null,
  * }} props
  */
 export default function TransactionList({
 	transactions = [],
 	categories = [],
 	subcategories = [],
+	initialMonthFilter = null,
 }) {
 	const [rows, setRows] = useState(transactions);
 	const [deletingId, setDeletingId] = useState(null);
@@ -125,11 +127,16 @@ export default function TransactionList({
 	}, [rows]);
 
 	// --- Filtros ----------------------------------------------------------
-	const [monthFilter, setMonthFilter] = useState(() =>
-		rows.some((tx) => monthKeyOf(dateOf(tx)) === currentMonthKey)
+	// `initialMonthFilter` (p. ej. "2026-09") lo manda dashboard.astro con el
+	// mes que se está viendo, para que el filtro arranque en ESE mes y no en
+	// el mes real del navegador. Sin la prop, el comportamiento es idéntico
+	// al de antes (mes actual si hay movimientos ese mes, si no "Todos").
+	const [monthFilter, setMonthFilter] = useState(() => {
+		if (initialMonthFilter) return initialMonthFilter;
+		return rows.some((tx) => monthKeyOf(dateOf(tx)) === currentMonthKey)
 			? currentMonthKey
-			: "",
-	);
+			: "";
+	});
 	const [typeFilter, setTypeFilter] = useState("todos"); // todos | ingresos | gastos
 	const [page, setPage] = useState(1);
 

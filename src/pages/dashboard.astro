@@ -17,6 +17,7 @@ import {
 	splitIncome,
 } from "../lib/budget.js";
 import { formatCents } from "../lib/money";
+import { formatMonthLabel, resolveViewedMonth } from "../lib/period.js";
 
 // Ruta on-demand: necesita la sesión del usuario en cada request.
 export const prerender = false;
@@ -58,15 +59,13 @@ if (!profile) {
 	return Astro.redirect("/onboarding");
 }
 
-// US-15: presupuesto mensual. Mes y año actuales (o vía URL para un futuro
-// selector de mes). getMonth() es 0-indexado -> +1 para el rango 1..12.
-const nowRef = new Date();
-const year =
-	Number.parseInt(Astro.url.searchParams.get("year") ?? "", 10) ||
-	nowRef.getFullYear();
-const month =
-	Number.parseInt(Astro.url.searchParams.get("month") ?? "", 10) ||
-	nowRef.getMonth() + 1;
+// US-15: presupuesto mensual. ?year=&month= navegan a un mes pasado; params
+// ausentes/inválidos o un mes futuro caen siempre al mes actual (ver
+// src/lib/period.js, con sus propios tests unitarios).
+const { year, month, isCurrentMonth, previous, next } = resolveViewedMonth({
+	yearParam: Astro.url.searchParams.get("year"),
+	monthParam: Astro.url.searchParams.get("month"),
+});
 
 // Vista mensual, ya filtrada por usuario vía RLS, acotada al mes en curso.
 const { data, error } = await supabase
@@ -97,21 +96,27 @@ const lastDayOfMonth = new Date(year, month, 0); // month 1..12 -> día 0 del me
 const monthEndISO = `${lastDayOfMonth.getFullYear()}-${pad2(lastDayOfMonth.getMonth() + 1)}-${pad2(lastDayOfMonth.getDate())}`;
 const monthStartISO = `${year}-${pad2(month)}-01`;
 
-const { data: deferredRows, error: deferredError } = await supabase
-	.from("transactions")
-	.select("amount_cents")
-	.eq("user_id", user.id)
-	.gt("amount_cents", 0)
-	.gt("effective_date", monthEndISO);
+// Solo tiene sentido para el mes actual: "diferido" significa ingresos que
+// aún no llegaron, algo que no aplica al mirar un mes ya cerrado (ahí todo lo
+// posterior a esa fecha ya pasó, o es simplemente otro mes futuro-del-pasado).
+let saldoDiferido = 0;
+if (isCurrentMonth) {
+	const { data: deferredRows, error: deferredError } = await supabase
+		.from("transactions")
+		.select("amount_cents")
+		.eq("user_id", user.id)
+		.gt("amount_cents", 0)
+		.gt("effective_date", monthEndISO);
 
-if (deferredError) {
-	console.warn("No se pudo calcular saldoDiferido:", deferredError.message);
+	if (deferredError) {
+		console.warn("No se pudo calcular saldoDiferido:", deferredError.message);
+	}
+
+	saldoDiferido = (deferredRows ?? []).reduce(
+		(total, row) => total + Number(row.amount_cents ?? 0),
+		0,
+	);
 }
-
-const saldoDiferido = (deferredRows ?? []).reduce(
-	(total, row) => total + Number(row.amount_cents ?? 0),
-	0,
-);
 
 // categories: PK compuesta (user_id, name); no existe columna id -> `name` es el
 // identificador. `type` para la etiqueta del sobre; `macro_type` para agrupar
@@ -383,6 +388,50 @@ const deudas = (debtCats ?? []).map((c) => {
 			</form>
 		</header>
 
+		<nav
+			class="mb-6 flex items-center justify-center gap-2 text-sm"
+			aria-label="Navegación de mes"
+		>
+			<a
+				href={`/dashboard?year=${previous.year}&month=${previous.month}`}
+				class="rounded-lg px-2 py-1 text-slate-300 transition-colors hover:bg-slate-800 hover:text-slate-100"
+			>
+				← {formatMonthLabel(previous.year, previous.month)}
+			</a>
+			<span class="text-slate-600">·</span>
+			{
+				isCurrentMonth ? (
+					<span
+						aria-current="true"
+						class="cursor-not-allowed rounded-lg px-2 py-1 font-semibold text-slate-100"
+					>
+						{formatMonthLabel(year, month)} →
+					</span>
+				) : (
+					<a
+						href={`/dashboard?year=${next.year}&month=${next.month}`}
+						class="rounded-lg px-2 py-1 font-semibold text-slate-100 transition-colors hover:bg-slate-800"
+					>
+						{formatMonthLabel(year, month)} →
+					</a>
+				)
+			}
+		</nav>
+
+		{
+			!isCurrentMonth && (
+				<div class="mb-6 rounded-xl border border-slate-700 bg-slate-800/60 px-4 py-3 text-sm text-slate-400">
+					Estás viendo {formatMonthLabel(year, month)} (solo lectura).{" "}
+					<a
+						href="/dashboard"
+						class="text-indigo-400 underline-offset-4 hover:underline"
+					>
+						Volver al mes actual
+					</a>
+				</div>
+			)
+		}
+
 		{
 			showDeficitBanner && (
 				<div class="mb-6 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
@@ -407,11 +456,15 @@ const deudas = (debtCats ?? []).map((c) => {
 					<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-slate-400">
 						Saldo total
 					</h2>
-					<IncomeModal
-						client:load
-						pendingFixedCents={remanenteFijoPorCubrir}
-						alreadyPaidFixedCents={alreadyPaidFixedCents}
-					/>
+					{
+						isCurrentMonth && (
+							<IncomeModal
+								client:load
+								pendingFixedCents={remanenteFijoPorCubrir}
+								alreadyPaidFixedCents={alreadyPaidFixedCents}
+							/>
+						)
+					}
 				</div>
 				<HeroBalance
 					amountInCents={totalBalanceCents}
@@ -435,12 +488,16 @@ const deudas = (debtCats ?? []).map((c) => {
 				/>
 			</section>
 
-			<section class="space-y-3">
-				<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-slate-400">
-					Quincena
-				</h2>
-				<QuincenaTracker />
-			</section>
+			{
+				isCurrentMonth && (
+					<section class="space-y-3">
+						<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-slate-400">
+							Quincena
+						</h2>
+						<QuincenaTracker />
+					</section>
+				)
+			}
 
 			<section class="space-y-3">
 				<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-slate-400">
@@ -470,16 +527,21 @@ const deudas = (debtCats ?? []).map((c) => {
 					transactions={movimientos}
 					categories={dashCategories}
 					subcategories={subcategoriesForModal}
+					initialMonthFilter={`${year}-${pad2(month)}`}
 				/>
 			</section>
 		</div>
 
-		<QuickExpenseModal
-			categories={categories}
-			provisionItems={provisionItemsForModal}
-			subcategories={subcategoriesForModal}
-			client:load
-		/>
+		{
+			isCurrentMonth && (
+				<QuickExpenseModal
+					categories={categories}
+					provisionItems={provisionItemsForModal}
+					subcategories={subcategoriesForModal}
+					client:load
+				/>
+			)
+		}
 		</main>
 	</div>
 </BaseLayout>
