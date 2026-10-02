@@ -6,6 +6,7 @@ import ProvisionsGrowthChart from "../components/ProvisionsGrowthChart.jsx";
 import ProvisionsDetailedTable from "../components/ProvisionsDetailedTable.jsx";
 import { createSupabaseServerClient } from "../lib/supabase.js";
 import { SYS_CAT } from "../lib/budget.js";
+import { formatCents } from "../lib/money";
 
 // Ruta on-demand: requiere sesión.
 export const prerender = false;
@@ -111,6 +112,25 @@ for (const tx of txRows ?? []) {
 	else incomeVsExpenses[m].salidas += Math.abs(cents);
 }
 
+// Desglose por mes (debajo de AnnualSummary): reutiliza incomeVsExpenses, sin
+// consultas nuevas. Solo meses hasta el actual (no mostrar meses futuros de
+// este mismo año, que siempre estarían en $0) y que hayan tenido algún
+// movimiento. Balance = ingresos - salidas, en centavos enteros (§2); el
+// más reciente primero.
+const currentMonthIndex = new Date().getMonth(); // 0-indexado, como MESES_CORTOS.
+const monthlyBreakdown = incomeVsExpenses
+	.map((m, i) => ({
+		monthNumber: i + 1,
+		label: m.month,
+		ingresos: m.ingresos,
+		salidas: m.salidas,
+		balance: m.ingresos - m.salidas,
+	}))
+	.filter(
+		(m) => m.monthNumber - 1 <= currentMonthIndex && (m.ingresos > 0 || m.salidas > 0),
+	)
+	.reverse();
+
 // --- PASO 2: detalle por rubro de provisión (todo el historial) -------
 const { data: provItemRows } = await supabase
 	.from("provision_items")
@@ -196,6 +216,60 @@ const balanceNeto =
 			totalGastos={totalGastos}
 			balanceNeto={balanceNeto}
 		/>
+
+		<section class="mt-8 space-y-3">
+			<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-slate-400">
+				Balance por mes
+			</h2>
+			{
+				monthlyBreakdown.length === 0 ? (
+					<p class="rounded-xl border border-slate-700 bg-slate-800 px-4 py-6 text-center text-sm text-slate-400">
+						Aún no hay movimientos este año.
+					</p>
+				) : (
+					<div class="overflow-x-auto rounded-xl border border-slate-700 bg-slate-800">
+						<table class="w-full text-sm">
+							<thead>
+								<tr class="border-b border-slate-700 text-xs uppercase tracking-wider text-slate-400">
+									<th class="px-3 py-2 text-left font-medium">Mes</th>
+									<th class="px-3 py-2 text-right font-medium">Ingresos</th>
+									<th class="px-3 py-2 text-right font-medium">Salidas</th>
+									<th class="px-3 py-2 text-right font-medium">Balance</th>
+								</tr>
+							</thead>
+							<tbody class="divide-y divide-slate-700">
+								{monthlyBreakdown.map((m) => (
+									<tr>
+										<td class="px-3 py-2.5 text-left">
+											<a
+												href={`/dashboard?year=${year}&month=${m.monthNumber}`}
+												class="text-slate-100 underline-offset-4 hover:text-indigo-400 hover:underline"
+											>
+												{m.label}
+											</a>
+										</td>
+										<td class="px-3 py-2.5 text-right font-mono tabular-nums text-emerald-400">
+											{formatCents(m.ingresos)}
+										</td>
+										<td class="px-3 py-2.5 text-right font-mono tabular-nums text-rose-400">
+											{formatCents(m.salidas)}
+										</td>
+										<td
+											class:list={[
+												"px-3 py-2.5 text-right font-mono tabular-nums",
+												m.balance < 0 ? "text-rose-400" : "text-emerald-400",
+											]}
+										>
+											{formatCents(m.balance)}
+										</td>
+									</tr>
+								))}
+							</tbody>
+						</table>
+					</div>
+				)
+			}
+		</section>
 
 		<section class="mt-8 space-y-3">
 			<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-slate-400">
