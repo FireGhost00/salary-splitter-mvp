@@ -199,12 +199,21 @@ const balanceNeto =
 					Todo tu año en cuatro números.
 				</p>
 			</div>
-			<a
-				href="/dashboard"
-				class="shrink-0 rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-400 transition-colors hover:text-slate-100"
-			>
-				← Dashboard
-			</a>
+			<div class="flex shrink-0 flex-wrap items-center justify-end gap-2">
+				<a
+					href={`/api/export-transactions?year=${year}`}
+					download
+					class="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-400 transition-colors hover:text-slate-100"
+				>
+					Descargar CSV de {year}
+				</a>
+				<a
+					href="/dashboard"
+					class="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-400 transition-colors hover:text-slate-100"
+				>
+					← Dashboard
+				</a>
+			</div>
 		</header>
 
 		<AnnualSummary

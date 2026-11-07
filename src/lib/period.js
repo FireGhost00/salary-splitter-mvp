@@ -17,7 +17,7 @@ export const MONTH_NAMES_ES = Object.freeze([
 const YEAR_RE = /^\d{4}$/;
 const MONTH_RE = /^\d{1,2}$/;
 /** Piso de cordura para `year` ("0000" son 4 dígitos pero no es un año real). */
-const MIN_YEAR = 1970;
+export const MIN_YEAR = 1970;
 
 /** Mes anterior (1..12), con acarreo de año (enero -> diciembre del año previo). */
 function previousMonth(year, month) {
