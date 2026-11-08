@@ -519,9 +519,19 @@ const deudas = (debtCats ?? []).map((c) => {
 			</section>
 
 			<section class="space-y-3">
-				<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-slate-400">
-					Movimientos
-				</h2>
+				<div class="flex flex-wrap items-center justify-between gap-2">
+					<h2 class="text-xs font-medium uppercase tracking-[0.25em] text-slate-400">
+						Movimientos
+					</h2>
+					{/* Solo lectura: disponible también en meses pasados. */}
+					<a
+						href={`/api/export-transactions?year=${year}&month=${month}`}
+						download
+						class="text-xs text-slate-400 underline-offset-4 transition-colors hover:text-slate-100 hover:underline"
+					>
+						Descargar CSV de {formatMonthLabel(year, month)}
+					</a>
+				</div>
 				<TransactionList
 					client:load
 					transactions={movimientos}
